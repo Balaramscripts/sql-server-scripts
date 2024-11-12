@@ -13,15 +13,18 @@ This repository contains a script to perform a Disaster Recovery (DR) drill for 
 1. **Verify Log Shipping Status**: Ensure that log shipping is running smoothly by checking the status of the log shipping monitor.
 
     ```sql
-    SELECT 
-        secondary_server, 
-        secondary_database, 
-        last_backup_file, 
-        last_backup_date, 
-        last_restored_file, 
-        last_restored_date 
+   SELECT 
+    secondary_server,
+    secondary_database,
+    primary_server,
+    primary_database,
+    last_copied_file,
+    last_copied_date,
+    last_restored_file,
+    last_restored_date
     FROM msdb.dbo.log_shipping_monitor_secondary
-    WHERE secondary_database = 'YourSecondaryDatabase';
+    WHERE secondary_database = 'FinanceDB';
+
     ```
 
 2. **Run Backup Job on Primary**: Trigger the backup job on the primary server to take the latest transaction log backup.
