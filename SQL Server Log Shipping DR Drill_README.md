@@ -1,19 +1,26 @@
+
 # SQL Server Log Shipping DR Drill
 
-This repository contains a script to perform a Disaster Recovery (DR) drill for SQL Server log shipping. The script allows you to switch the roles of the primary and secondary databases without data loss.
+This repository contains a comprehensive guide to performing a Disaster Recovery (DR) drill for SQL Server log shipping. It includes both script-based and SSMS GUI-based methods to switch roles between the primary and secondary databases without data loss.
+
+---
 
 ## Prerequisites
-
 - SQL Server Management Studio (SSMS)
 - SQL Server Agent Jobs set up for Log Shipping
 - A working Log Shipping configuration
 
+---
+
 ## Steps for DR Drill
 
-1. **Verify Log Shipping Status**: Ensure that log shipping is running smoothly by checking the status of the log shipping monitor.
+### 1. Verify Log Shipping Status
 
-    ```sql
-   SELECT 
+#### Script Method
+Run the following query to check the status of log shipping:
+
+```sql
+SELECT 
     secondary_server,
     secondary_database,
     primary_server,
@@ -22,79 +29,125 @@ This repository contains a script to perform a Disaster Recovery (DR) drill for 
     last_copied_date,
     last_restored_file,
     last_restored_date
-    FROM msdb.dbo.log_shipping_monitor_secondary
-    WHERE secondary_database = 'FinanceDB';
+FROM msdb.dbo.log_shipping_monitor_secondary
+WHERE secondary_database = 'YourSecondaryDatabase';
+```
 
-    ```
+#### GUI Method
+1. Open **SSMS**.
+2. Navigate to **Management** → **Log Shipping Status**.
+3. Verify the status of all primary and secondary databases.
 
-2. **Run Backup Job on Primary**: Trigger the backup job on the primary server to take the latest transaction log backup.
+---
 
-    ```sql
-    EXEC msdb.dbo.sp_start_job @job_name = 'Log Shipping Backup Job';
-    ```
+### 2. Trigger Backup Job on Primary
 
-3. **Run Copy Job on Secondary**: Copy the transaction log backup file from the primary server to the secondary.
+#### Script Method
+Execute the following command to start the backup job:
 
-    ```sql
-    EXEC msdb.dbo.sp_start_job @job_name = 'Log Shipping Copy Job';
-    ```
+```sql
+EXEC msdb.dbo.sp_start_job @job_name = 'Log Shipping Backup Job';
+```
 
-4. **Run Restore Job on Secondary**: Apply the copied log backup file to the secondary database.
+#### GUI Method
+1. In **SSMS**, connect to the **Primary Server**.
+2. Go to **SQL Server Agent** → **Jobs**.
+3. Right-click on the **Log Shipping Backup Job** and select **Start Job at Step**.
+4. Monitor its progress in the **Job Activity Monitor**.
 
-    ```sql
-    EXEC msdb.dbo.sp_start_job @job_name = 'Log Shipping Restore Job';
-    ```
+---
 
-5. **Tail-Log Backup on Primary**: Take a final transaction log backup on the primary server to capture any remaining unbacked-up transactions.
+### 3. Trigger Copy Job on Secondary
 
-    ```sql
-    BACKUP LOG [YourPrimaryDatabase]
-    TO DISK = 'C:\Backups\YourPrimaryDatabase_TailLog.trn'
-    WITH NORECOVERY;
-    ```
+#### Script Method
+Execute the following command:
 
-6. **Restore Tail-Log on Secondary**: Restore the tail-log backup on the secondary database to bring it up-to-date.
+```sql
+EXEC msdb.dbo.sp_start_job @job_name = 'Log Shipping Copy Job';
+```
 
-    ```sql
-    RESTORE LOG [YourSecondaryDatabase]
-    FROM DISK = 'C:\Backups\YourPrimaryDatabase_TailLog.trn'
-    WITH RECOVERY;
-    ```
+#### GUI Method
+1. Connect to the **Secondary Server** in SSMS.
+2. Navigate to **SQL Server Agent** → **Jobs**.
+3. Right-click on the **Log Shipping Copy Job** and select **Start Job at Step**.
 
-7. **Reconfigure Log Shipping Roles**: Switch the primary and secondary roles by reconfiguring the log shipping settings.
+---
 
-    - **On the new Primary (formerly Secondary)**: Configure it to start taking backups and sending logs to the original primary server (now secondary).
+### 4. Trigger Restore Job on Secondary
 
-        ```sql
-        EXEC master.dbo.sp_add_log_shipping_primary_database
-            @database = 'YourSecondaryDatabase',
-            @backup_directory = 'C:\LogShippingBackup',
-            @backup_retention_period = 4320,
-            @backup_threshold = 60,
-            @threshold_alert_enabled = 1,
-            @history_retention_period = 1440;
-        ```
+#### Script Method
+Run this command to start the restore job:
 
-    - **On the new Secondary (formerly Primary)**: Set it up to receive and restore logs from the new primary.
+```sql
+EXEC msdb.dbo.sp_start_job @job_name = 'Log Shipping Restore Job';
+```
 
-        ```sql
-        EXEC master.dbo.sp_add_log_shipping_secondary_database
-            @secondary_database = 'YourPrimaryDatabase',
-            @restore_delay = 0,
-            @restore_all = 1,
-            @restore_mode = 1,
-            @disconnect_users = 1,
-            @threshold_alert_enabled = 1,
-            @threshold_alert = 60,
-            @history_retention_period = 1440;
-        ```
+#### GUI Method
+1. On the **Secondary Server**, go to **SQL Server Agent** → **Jobs**.
+2. Right-click on the **Log Shipping Restore Job** and select **Start Job at Step**.
 
-## How to Use
+---
 
-1. Copy the T-SQL script to SSMS.
-2. Follow the steps sequentially to complete the DR drill process.
-3. Monitor the jobs in SQL Server Agent to ensure everything completes successfully.
+### 5. Perform Tail-Log Backup on Primary
+
+#### Script Method
+Run the following T-SQL command to take the tail-log backup:
+
+```sql
+BACKUP LOG [YourPrimaryDatabase]
+TO DISK = 'C:\Backups\YourPrimaryDatabase_TailLog.trn'
+WITH NORECOVERY;
+```
+
+#### GUI Method
+1. On the **Primary Server**, right-click the database and select **Tasks** → **Back Up**.
+2. In the **Backup Database** dialog:
+   - Select **Transaction Log** as the backup type.
+   - Choose a destination (e.g., `YourPrimaryDatabase_TailLog.trn`).
+   - Under **Options**, select **WITH NORECOVERY**.
+3. Click **OK** to start the backup.
+
+---
+
+### 6. Restore Tail-Log on Secondary
+
+#### Script Method
+Run the following command:
+
+```sql
+RESTORE LOG [YourSecondaryDatabase]
+FROM DISK = 'C:\Backups\YourPrimaryDatabase_TailLog.trn'
+WITH RECOVERY;
+```
+
+#### GUI Method
+1. On the **Secondary Server**, right-click the secondary database and select **Tasks** → **Restore** → **Transaction Log**.
+2. In the **Restore Database** dialog:
+   - Select the tail-log backup file (e.g., `YourPrimaryDatabase_TailLog.trn`).
+   - Check the option **WITH RECOVERY** under the **Options** tab.
+3. Click **OK** to restore the transaction log.
+
+---
+
+### 7. Reconfigure Log Shipping Roles
+
+#### New Primary (formerly Secondary)
+1. On the new **Primary Server**, right-click the database and select **Properties**.
+2. Go to the **Transaction Log Shipping** page.
+3. Check **Enable this as a primary database in a log shipping configuration**.
+4. Specify the backup folder path, backup job settings, and retention period.
+5. Click **OK** to save and enable log shipping.
+
+#### New Secondary (formerly Primary)
+1. On the new **Secondary Server**, right-click the database and select **Properties**.
+2. Navigate to the **Transaction Log Shipping** page.
+3. Check **Enable this as a secondary database**.
+4. Configure the restore settings, including:
+   - The shared folder for receiving log backups.
+   - Restore schedule and mode (standby or no recovery).
+5. Click **OK** to save the configuration.
+
+---
 
 ## Contribution
-
 Feel free to submit pull requests or report issues. All contributions are welcome!
