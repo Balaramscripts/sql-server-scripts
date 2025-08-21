@@ -1,0 +1,59 @@
+
+SOP: Log Shipping DR Drill - Failover and Failback
+
+Step 1: Backup Tail Log on Primary (Before Failover)
+---------------------------------------------------
+USE master;
+GO
+BACKUP LOG [logshipping_prod]
+TO DISK = N'D:\balaram\YourDatabaseName_DRFinal.trn'
+WITH NORECOVERY, INIT, COMPRESSION, STATS = 10;
+GO
+
+Step 2: Restore Tail Log on Secondary (To Bring as Primary)
+-----------------------------------------------------------
+RESTORE LOG [logshipping_prod]
+FROM DISK = N'D:\balaram\YourDatabaseName_DRFinal.trn'
+WITH RECOVERY;
+GO
+
+(Now Secondary becomes Primary)
+
+Step 3: Application Redirection
+-------------------------------
+- Point application connection strings to new Primary.
+
+Step 4: Reverse Log Shipping (Failback to Original Primary)
+-----------------------------------------------------------
+- Take full backup from new Primary:
+BACKUP DATABASE [logshipping_prod]
+TO DISK = N'D:\balaram\YourDatabaseName_Full.bak'
+WITH INIT, COMPRESSION, STATS = 10;
+GO
+
+- Restore full backup on original Primary WITH NORECOVERY:
+RESTORE DATABASE [logshipping_prod]
+FROM DISK = N'D:\balaram\YourDatabaseName_Full.bak'
+WITH NORECOVERY, REPLACE, STATS = 10;
+GO
+
+- Restore logs (if any):
+RESTORE LOG [logshipping_prod]
+FROM DISK = N'D:\balaram\YourDatabaseName_Log.trn'
+WITH NORECOVERY, STATS = 10;
+GO
+
+- Finally, recover the database:
+RESTORE DATABASE [logshipping_prod] WITH RECOVERY;
+GO
+
+Step 5: Resume Log Shipping Jobs
+--------------------------------
+- Reconfigure Log Shipping in opposite direction (using SSMS GUI or scripts).
+- Ensure backup, copy, and restore jobs are enabled.
+
+Step 6: Validation
+------------------
+- Run DBCC CHECKDB on both sides.
+- Validate data consistency.
+- Ensure application connectivity.
