@@ -1,0 +1,136 @@
+1. Find Currently Running Queries
+
+This query shows currently running queries along with their session ID, wait types, blocking session IDs, and elapsed times.
+
+SELECT 
+    r.session_id,
+    r.status,
+    r.wait_type,
+    r.wait_time,
+    r.blocking_session_id,
+    r.cpu_time,
+    r.total_elapsed_time,
+    r.reads,
+    r.writes,
+    r.logical_reads,
+    r.start_time,
+    s.text AS query_text,
+    SUBSTRING(s.text, (r.statement_start_offset / 2) + 1, 
+        ((CASE statement_end_offset 
+            WHEN -1 THEN DATALENGTH(s.text)
+            ELSE r.statement_end_offset END - r.statement_start_offset) / 2) + 1) AS statement_text,
+    DB_NAME(r.database_id) AS database_name
+FROM 
+    sys.dm_exec_requests r
+CROSS APPLY 
+    sys.dm_exec_sql_text(r.sql_handle) s
+WHERE 
+    r.session_id > 50 -- Filter out system processes
+ORDER BY 
+    r.total_elapsed_time DESC;
+
+2. Find Queries with High CPU, I/O, or Logical Reads
+
+This script helps identify queries consuming excessive CPU, I/O, or memory (logical reads). It uses sys.dm_exec_query_stats to extract execution statistics.
+
+SELECT 
+    TOP 10 
+    qs.sql_handle,
+    qs.execution_count,
+    qs.total_worker_time / qs.execution_count AS avg_cpu_time,
+    qs.total_logical_reads / qs.execution_count AS avg_logical_reads,
+    qs.total_logical_writes / qs.execution_count AS avg_logical_writes,
+    qs.total_elapsed_time / qs.execution_count AS avg_elapsed_time,
+    qs.total_physical_reads / qs.execution_count AS avg_physical_reads,
+    qs.creation_time,
+    DB_NAME(st.dbid) AS database_name,
+    SUBSTRING(st.text, (qs.statement_start_offset/2) + 1, 
+        ((CASE qs.statement_end_offset 
+            WHEN -1 THEN DATALENGTH(st.text)
+            ELSE qs.statement_end_offset END - qs.statement_start_offset) / 2) + 1) AS query_text
+FROM 
+    sys.dm_exec_query_stats qs
+CROSS APPLY 
+    sys.dm_exec_sql_text(qs.sql_handle) st
+ORDER BY 
+    avg_cpu_time DESC;
+
+3. Analyze Wait Statistics for the Instance
+
+This script analyzes wait statistics on the SQL Server instance, which can provide insight into whether there are bottlenecks like I/O, memory, or CPU.
+
+SELECT 
+    wait_type,
+    SUM(wait_time_ms) AS total_wait_time_ms,
+    SUM(waiting_tasks_count) AS total_waiting_tasks_count,
+    AVG(wait_time_ms) AS avg_wait_time_ms
+FROM 
+    sys.dm_os_wait_stats
+WHERE 
+    wait_type NOT IN ('SLEEP_TASK', 'BROKER_RECEIVE_WAITFOR', 'SQLTRACE_BUFFER_FLUSH', 'BROKER_TASK_STOP', 'CLR_AUTO_EVENT')
+GROUP BY 
+    wait_type
+ORDER BY 
+    total_wait_time_ms DESC;
+
+4. Check for Missing Indexes
+
+Missing indexes can significantly degrade query performance. The following script lists missing indexes that could improve query performance.
+
+SELECT 
+    migs.avg_user_impact AS impact_percentage,
+    migs.avg_total_user_cost AS avg_cost,
+    mid.database_id,
+    DB_NAME(mid.database_id) AS database_name,
+    mid.object_id,
+    OBJECT_NAME(mid.object_id, mid.database_id) AS table_name,
+    'CREATE INDEX IX_' + OBJECT_NAME(mid.object_id, mid.database_id) + '_' + CAST(mid.index_handle AS VARCHAR(100)) 
+    + ' ON ' + OBJECT_NAME(mid.object_id, mid.database_id) + '(' + 
+    ISNULL(mid.equality_columns, '') + 
+    CASE 
+        WHEN mid.equality_columns IS NOT NULL AND mid.inequality_columns IS NOT NULL THEN ',' 
+        ELSE '' END + ISNULL(mid.inequality_columns, '') + ')' AS create_index_statement
+FROM 
+    sys.dm_db_missing_index_details mid
+JOIN 
+    sys.dm_db_missing_index_groups mig 
+    ON mid.index_handle = mig.index_handle
+JOIN 
+    sys.dm_db_missing_index_group_stats migs 
+    ON mig.index_group_handle = migs.group_handle
+ORDER BY 
+    impact_percentage DESC;
+
+5. Check Execution Plans for Long-Running Queries
+
+Execution plans can provide detailed information about how SQL Server is executing a query. You can use this script to retrieve the XML execution plan for a slow query.
+
+SELECT 
+    cp.plan_handle,
+    st.text AS query_text,
+    cp.usecounts,
+    cp.cacheobjtype,
+    cp.objtype,
+    qp.query_plan
+FROM 
+    sys.dm_exec_cached_plans cp
+CROSS APPLY 
+    sys.dm_exec_sql_text(cp.plan_handle) st
+CROSS APPLY 
+    sys.dm_exec_query_plan(cp.plan_handle) qp
+WHERE 
+    st.text LIKE '%<your query pattern here>%' -- Optionally filter specific queries
+ORDER BY 
+    cp.usecounts DESC;
+
+How to Use These Scripts
+
+Query 1 helps to view active queries and their session information, including waits and CPU usage.
+
+Query 2 identifies resource-hungry queries that might be causing bottlenecks.
+
+Query 3 analyzes instance-level wait statistics, pointing to possible bottlenecks like I/O, memory, or CPU.
+
+Query 4 highlights missing indexes that can be added to improve performance.
+
+Query 5 gives detailed execution plans that can help identify inefficiencies in query execution.

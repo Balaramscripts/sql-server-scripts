@@ -1,0 +1,3 @@
+ALTER TABLE [Tablename]
+
+ALTER COLUMN [ColumnName] [datatype](50) MASKED WITH (FUNCTION = 'default()') NULL

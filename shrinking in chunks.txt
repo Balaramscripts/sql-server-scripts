@@ -1,0 +1,39 @@
+USE [Aadhaar_Data_vault];
+GO
+
+DECLARE @FileName SYSNAME = N'ESB_NPCI'; -- Logical file name
+DECLARE @TargetMB INT = 800000; -- Final target size in MB
+DECLARE @StepMB INT = 100; -- Shrink step (MB)
+
+DECLARE @FileId INT, @InitialMB INT, @CurrentMB INT, @TotalToShrink INT, @NewTargetMB INT;
+
+-- Get file info
+SELECT @FileId = file_id, @InitialMB = size/128
+FROM sys.database_files
+WHERE name = @FileName;
+
+SET @CurrentMB = @InitialMB;
+SET @TotalToShrink = @InitialMB - @TargetMB;
+
+PRINT 'Shrink started: ' + CAST(@InitialMB AS VARCHAR(20)) + ' MB -> ' + CAST(@TargetMB AS VARCHAR(20)) + ' MB';
+
+WHILE @CurrentMB > @TargetMB
+BEGIN
+    SET @NewTargetMB = CASE 
+                          WHEN @CurrentMB - @StepMB < @TargetMB THEN @TargetMB 
+                          ELSE @CurrentMB - @StepMB 
+                       END;
+
+    -- Shrink
+    EXEC('DBCC SHRINKFILE (' + CAST(@FileId AS VARCHAR(10)) + ', ' + CAST(@NewTargetMB AS VARCHAR(10)) + ') WITH NO_INFOMSGS;');
+
+    -- Refresh size
+    SELECT @CurrentMB = size/128 FROM sys.database_files WHERE file_id = @FileId;
+
+    -- Progress message
+    PRINT CAST(@InitialMB - @CurrentMB AS VARCHAR(20)) + ' MB shrunk out of ' 
+          + CAST(@TotalToShrink AS VARCHAR(20)) + ' MB (Current size=' + CAST(@CurrentMB AS VARCHAR(20)) + ' MB)';
+END
+
+PRINT 'Shrink completed. Final size = ' + CAST(@CurrentMB AS VARCHAR(20)) + ' MB';
+GO

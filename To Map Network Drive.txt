@@ -1,0 +1,14 @@
+sp_configure 'xp_cmdshell', 1
+GO
+reconfigure
+GO
+EXEC xp_cmdshell 'NET USE U: /DELETE'
+GO
+
+EXEC xp_cmdshell 'NET USE U: \\10.101.14.22\fpb_backup\10.71.36.34\DIFF   th1s1sSQLp@sswdprod /USER:FINOPAYMENTBANK\SQLSVCAGENT_PRD /PERSISTENT:yes'
+GO
+
+sp_configure 'xp_cmdshell', 0
+GO
+reconfigure
+GO

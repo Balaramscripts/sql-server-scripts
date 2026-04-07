@@ -1,0 +1,38 @@
+USE [distribution]
+GO
+
+SET NOCOUNT ON;
+
+DECLARE @MaxIterations INT = 20; -- Set a limit for this run
+DECLARE @BatchSizeCommands INT = 5000; -- Small batches prevent long-held locks
+DECLARE @BatchSizeTransactions INT = 2000;
+DECLARE @Delay CHAR(8) = '00:00:01'; -- 1-second pause between batches
+
+-- SAFETY CHECK: Find the oldest sequence number not yet delivered to any Subscriber
+DECLARE @MinUndeliveredLSN VARBINARY(16);
+SELECT @MinUndeliveredLSN = MIN(subscription_seqno) 
+FROM MSsubscriptions 
+WHERE status = 2; -- Active subscriptions
+
+WHILE @MaxIterations > 0
+BEGIN
+    BEGIN TRANSACTION;
+
+    -- Delete commands only if they are OLDER than what any subscriber still needs
+    DELETE TOP (@BatchSizeCommands) 
+    FROM MSrepl_commands WITH (PAGLOCK, INDEX(ucMSrepl_commands))
+    WHERE xact_seqno < @MinUndeliveredLSN;
+
+    -- Delete transactions only if they are OLDER than what any subscriber still needs
+    DELETE TOP (@BatchSizeTransactions) 
+    FROM MSrepl_transactions WITH (PAGLOCK, INDEX(ucMSrepl_transactions))
+    WHERE xact_seqno < @MinUndeliveredLSN;
+
+    COMMIT TRANSACTION;
+
+    SET @MaxIterations = @MaxIterations - 1;
+
+    -- Yield to other processes (prevents blocking)
+    IF @MaxIterations > 0 
+        WAITFOR DELAY @Delay;
+END

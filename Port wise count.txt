@@ -1,0 +1,23 @@
+
+SELECT GETDATE() AS "Today's Date", COUNT(eC.connection_id) AS total_database_connections
+FROM sys.dm_exec_connections eC 
+CROSS APPLY sys.dm_exec_sql_text (eC.most_recent_sql_handle) ST
+LEFT JOIN sys.dm_exec_sessions eS 
+ON eC.most_recent_session_id = eS.session_id
+GO
+
+SELECT GETDATE() AS TodaysDate, DEC.local_tcp_port, COUNT(DEC.session_id) AS connection_count
+FROM sys.dm_exec_sessions AS des
+INNER JOIN sys.dm_exec_connections AS DEC ON des.session_id = DEC.session_id
+GROUP BY DEC.local_tcp_port
+ORDER BY DEC.local_tcp_port DESC
+GO
+
+
+SELECT GETDATE() AS TodaysDate, des.login_name as LoginName, DEC.local_tcp_port, COUNT(DEC.session_id) AS connection_count
+FROM sys.dm_exec_sessions AS des
+INNER JOIN sys.dm_exec_connections AS DEC ON des.session_id = DEC.session_id
+WHERE nt_domain IS NULL and des.login_name NOT IN ('a_repl_prd', 'dpa', 'a_healapp_prd')
+GROUP BY des.login_name, DEC.local_tcp_port
+ORDER BY DEC.local_tcp_port DESC
+GO

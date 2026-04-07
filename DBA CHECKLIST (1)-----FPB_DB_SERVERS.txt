@@ -1,0 +1,268 @@
+------Disk Space------
+
+
+sp_configure 'Ole Automation Procedures', 1
+GO
+reconfigure
+GO
+
+SET NOCOUNT ON
+DECLARE @hr int
+DECLARE @fso int
+DECLARE @drive char(1)
+DECLARE @odrive int
+DECLARE @TotalSize varchar(20) DECLARE @MB Numeric ; SET @MB = 1048576
+CREATE TABLE #drives (drive char(1) PRIMARY KEY, FreeSpace int NULL,
+TotalSize int NULL) INSERT #drives(drive,FreeSpace) EXEC
+master.dbo.xp_fixeddrives EXEC @hr=sp_OACreate
+'Scripting.FileSystemObject',@fso OUT IF @hr <> 0 EXEC sp_OAGetErrorInfo
+@fso
+DECLARE dcur CURSOR LOCAL FAST_FORWARD
+FOR SELECT drive from #drives ORDER by drive
+OPEN dcur FETCH NEXT FROM dcur INTO @drive
+WHILE @@FETCH_STATUS=0
+BEGIN
+EXEC @hr = sp_OAMethod @fso,'GetDrive', @odrive OUT, @drive
+IF @hr <> 0 EXEC sp_OAGetErrorInfo @fso EXEC @hr =
+sp_OAGetProperty
+@odrive,'TotalSize', @TotalSize OUT IF @hr <> 0 EXEC sp_OAGetErrorInfo
+@odrive UPDATE #drives SET TotalSize=@TotalSize/@MB WHERE
+drive=@drive FETCH NEXT FROM dcur INTO @drive
+End
+Close dcur
+DEALLOCATE dcur
+EXEC @hr=sp_OADestroy @fso IF @hr <> 0 EXEC sp_OAGetErrorInfo @fso
+
+SELECT @@servername as ServerName, getdate() as 'TodayDate', drive + ':' as 'Drive', TotalSize/1024 as 'Total(GB)', FreeSpace/1024 as 'Free(GB)', ((FreeSpace*100)/TotalSize) as Percentage FROM #drives
+ORDER BY drive 
+GO
+
+sp_configure 'Ole Automation Procedures', 0
+GO
+reconfigure
+GO
+
+
+
+-------- DB Logical Space ----------
+
+
+
+CREATE TABLE #DatabaseFilesSpecs
+(
+	ID INT identity (1,1)
+	,Database_Name VARCHAR(123)
+	,Logical_File_Name VARCHAR(123)
+	,DriveLetter VARCHAR(2)
+	,Physical_Name NVARCHAR(MAX)
+	,TotalSpaceReservedMB DECIMAL(10,2)
+	,SpaceUsedMB DECIMAL(10,2)
+	,SpaceFreeMB DECIMAL(10,2)
+	,PercentSpaceFree DECIMAL (10,2)
+	,FileType VARCHAR(3)
+)
+-- load the databases' files specs into the temp table
+INSERT INTO #DatabaseFilesSpecs
+EXECUTE sp_MSforeachdb' USE [?]
+SELECT db_name() as Database_Name
+,df.name as Logical_File_Name
+,substring(df.physical_name, 1,2)
+,df.physical_name
+,ROUND(CAST((df.size) AS FLOAT)/128,2) AS TotalSpaceReservedMB
+,ROUND(CAST((FILEPROPERTY(df.name,''SpaceUsed'')) AS FLOAT)/128,2) AS SpaceUsedMB
+,ROUND((CAST((df.size) AS FLOAT)/128)-(CAST((FILEPROPERTY(df.name,''SpaceUsed''))AS FLOAT)/128),2) AS SpaceFreeMB
+,ROUND((((CAST((df.size) AS FLOAT)/128)-(CAST((FILEPROPERTY(df.name,''SpaceUsed''))AS FLOAT)/128)) / (CAST((df.size) AS FLOAT)/128) * 100),2) AS PercentSpaceFree
+,RIGHT(df.physical_name,3)
+FROM sys.database_files df
+'
+-- Insert the following between line #21 and #22 to omit the list of system databases
+-- IF DB_NAME() NOT IN(''master'',''msdb'',''tempdb'',''model'')
+-- query the #DatabaseFilesSpecs temp table
+SELECT
+	ID
+	,Database_Name
+	,Logical_File_Name
+	,DriveLetter
+	,Physical_Name
+	,TotalSpaceReservedMB
+	,SpaceUsedMB
+	,SpaceFreeMB
+	,PercentSpaceFree
+	,FileType
+FROM #DatabaseFilesSpecs
+
+GO
+
+
+
+------------- DB FULL BACKUP------------
+;WITH CTE_Backup AS
+(
+SELECT  database_name,backup_start_date,type,physical_device_name
+       ,Row_Number() OVER(PARTITION BY database_name,BS.type 
+        ORDER BY backup_start_date DESC) AS RowNum
+FROM    msdb..backupset BS
+JOIN    msdb.dbo.backupmediafamily BMF
+ON      BS.media_set_id=BMF.media_set_id
+)
+SELECT      @@servername AS ServerName
+		   ,(SELECT IP.LOCAL_NET_ADDRESS AS 'IPAddressOfSQLServer' FROM sys.dm_exec_connections IP WHERE IP.SESSION_ID = @@SPID) AS 'IPAddressOfSQLServer'
+	       ,D.name
+           ,ISNULL(CONVERT(VARCHAR,backup_start_date),'No backups') AS last_backup_time
+           ,D.recovery_model_desc
+           ,state_desc,
+            CASE WHEN type ='D' THEN 'Full database'
+            WHEN type ='I' THEN 'Differential database' 
+            WHEN type ='L' THEN 'Log' 
+            WHEN type ='F' THEN 'File or filegroup' 
+            WHEN type ='G' THEN 'Differential file' 
+            WHEN type ='P' THEN 'Partial' 
+            WHEN type ='Q' THEN 'Differential partial' 
+            ELSE 'Unknown' END AS backup_type 
+           ,physical_device_name
+FROM        sys.databases D
+LEFT JOIN   CTE_Backup CTE
+ON          D.name = CTE.database_name
+AND         RowNum = 1
+WHERE type in ('D', 'I')
+ORDER BY    last_backup_time desc,D.name,type
+--ORDER BY    D.name, type, last_backup_time desc
+
+
+
+---------------------------------
+-- Primary Logshipping Setting --
+---------------------------------
+SELECT @@servername AS PrimaryServer
+	,substring(@@version, 11, 24) AS [sql version]
+	,P.primary_database
+	,CASE WHEN P.backup_compression = 0 THEN 'Disabled' WHEN P.backup_compression = 1 THEN 'Enabled' WHEN P.backup_compression = 2 THEN 'Default' END AS [backup_compression]
+	,S.secondary_server AS SecondaryServer
+	,P.last_backup_date
+	,P.backup_directory
+	,P.backup_share
+	,P.last_backup_file
+	,P.monitor_server
+FROM msdb.dbo.log_shipping_primary_databases P
+LEFT JOIN msdb.dbo.log_shipping_primary_secondaries S ON P.primary_id = S.primary_id
+
+
+
+------------------------------------
+-- Secondary Logshipping Settings --
+------------------------------------
+;WITH CTE_DB_Size AS
+(
+SELECT db.name AS DATABASE_NAME,
+    SUM(size * 8) AS 'Size (KB)',
+    ROUND(SUM(CAST((size * 8) AS FLOAT)) / 1024, 2) AS 'Size (MB)',
+    ROUND(((SUM(CAST((size * 8) AS FLOAT)) / 1024) / 1024), 2) AS 'Size (GB)'
+FROM sysaltfiles files
+INNER JOIN sysdatabases db
+ ON db.dbid = files.dbid
+GROUP BY db.name 
+)
+select @@servername as ServerName,
+		A.primary_server,
+		A.primary_database,
+		C.[Size (MB)],
+		A.backup_source_directory,
+		left(right(A.last_copied_file, 18), 8) as 'Last Copied File Date', 
+		left(right(B.last_restored_file, 18), 8) as 'Last Restore File Date',
+		left(right(A.last_copied_file, 10), 6) as 'Last Copied File Time',
+		left(right(B.last_restored_file, 10), 6) as 'Last Restore File Time',
+		A.last_copied_date,
+		B.last_restored_date,
+		A.last_copied_file,
+		B.last_restored_file
+from msdb.dbo.log_shipping_secondary A 
+LEFT JOIN msdb.dbo.log_shipping_secondary_databases B ON A.secondary_id = B.secondary_id
+LEFT JOIN CTE_DB_Size C ON A.primary_database = C.DATABASE_NAME
+
+
+
+
+
+------SQL JOB-------------
+
+
+
+SELECT 
+    [sJOB].[job_id] AS [JobID]
+    , [sJOB].[name] AS [JobName]
+    , CASE 
+        WHEN [sJOBH].[run_date] IS NULL OR [sJOBH].[run_time] IS NULL THEN NULL
+        ELSE CAST(
+                CAST([sJOBH].[run_date] AS CHAR(8))
+                + ' ' 
+                + STUFF(
+                    STUFF(RIGHT('000000' + CAST([sJOBH].[run_time] AS VARCHAR(6)),  6)
+                        , 3, 0, ':')
+                    , 6, 0, ':')
+                AS DATETIME)
+      END AS [LastRunDateTime]
+    , CASE [sJOBH].[run_status]
+        WHEN 0 THEN 'Failed'
+        WHEN 1 THEN 'Succeeded'
+        WHEN 2 THEN 'Retry'
+        WHEN 3 THEN 'Canceled'
+        WHEN 4 THEN 'Running' -- In Progress
+      END AS [LastRunStatus]
+    , STUFF(
+            STUFF(RIGHT('000000' + CAST([sJOBH].[run_duration] AS VARCHAR(6)),  6)
+                , 3, 0, ':')
+            , 6, 0, ':') 
+        AS [LastRunDuration (HH:MM:SS)]
+    , [sJOBH].[message] AS [LastRunStatusMessage]
+    , CASE [sJOBSCH].[NextRunDate]
+        WHEN 0 THEN NULL
+        ELSE CAST(
+                CAST([sJOBSCH].[NextRunDate] AS CHAR(8))
+                + ' ' 
+                + STUFF(
+                    STUFF(RIGHT('000000' + CAST([sJOBSCH].[NextRunTime] AS VARCHAR(6)),  6)
+                        , 3, 0, ':')
+                    , 6, 0, ':')
+                AS DATETIME)
+      END AS [NextRunDateTime]
+FROM 
+    [msdb].[dbo].[sysjobs] AS [sJOB]
+    LEFT JOIN (
+                SELECT
+                    [job_id]
+                    , MIN([next_run_date]) AS [NextRunDate]
+                    , MIN([next_run_time]) AS [NextRunTime]
+                FROM [msdb].[dbo].[sysjobschedules]
+                GROUP BY [job_id]
+            ) AS [sJOBSCH]
+        ON [sJOB].[job_id] = [sJOBSCH].[job_id]
+    LEFT JOIN (
+                SELECT 
+                    [job_id]
+                    , [run_date]
+                    , [run_time]
+                    , [run_status]
+                    , [run_duration]
+                    , [message]
+                    , ROW_NUMBER() OVER (
+                                            PARTITION BY [job_id] 
+                                            ORDER BY [run_date] DESC, [run_time] DESC
+                      ) AS RowNumber
+                FROM [msdb].[dbo].[sysjobhistory]
+                WHERE [step_id] = 0
+            ) AS [sJOBH]
+        ON [sJOB].[job_id] = [sJOBH].[job_id]
+        AND [sJOBH].[RowNumber] = 1
+ORDER BY [JobName]
+
+
+
+
+
+
+
+
+
+
+
+ 

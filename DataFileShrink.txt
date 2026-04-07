@@ -1,0 +1,135 @@
+USE [DB Name]
+
+GO
+
+ 
+
+BEGIN
+
+       DECLARE @DataFile SYSNAME
+
+       DECLARE @Totsize INT
+
+       DECLARE @Freesize INT
+
+       DECLARE @UseSize INT
+
+       DECLARE @Increment INT
+
+       DECLARE @Cur_DB_Size INT
+
+       DECLARE @Min_DB_Size INT
+
+       DECLARE @Cmd VARCHAR(200)
+
+ 
+
+       DECLARE Cur_Shrink_Loop CURSOR
+
+       FOR
+
+       SELECT NAME
+
+              ,(size * 8) / 1024 AS TotalSizeMB
+
+              ,CONVERT(DECIMAL(12, 4), ROUND((size - FILEPROPERTY(NAME, 'SpaceUsed')) / 128.0000, 4)) AS FreeMB
+
+              ,CONVERT(DECIMAL(12, 4), ROUND(FILEPROPERTY(NAME, 'SpaceUsed') / 128.0000, 4)) AS [UseMB]
+
+       FROM sys.database_files
+
+       WHERE Type = 0
+
+ 
+
+       OPEN Cur_Shrink_Loop
+
+ 
+
+       FETCH NEXT
+
+       FROM Cur_Shrink_Loop
+
+       INTO @DataFile
+
+              ,@TotSize
+
+              ,@FreeSize
+
+              ,@UseSize
+
+ 
+
+       WHILE @@fetch_status = 0
+
+       BEGIN
+
+              SET @Cur_DB_Size = @TotSize
+
+              SET @Min_DB_Size = @TotSize - @FreeSize - (10 * @UseSize / 100)
+
+              SET @Increment = 512
+
+ 
+
+              IF @Min_DB_Size > 0
+
+                      AND @Cur_DB_Size > 0
+
+              BEGIN
+
+                      WHILE @Cur_DB_Size > @Min_DB_Size
+
+                      BEGIN
+
+                             SET @Cur_DB_Size = @Cur_DB_Size - @Increment
+
+ 
+
+                             IF @Cur_DB_Size > 0
+
+                             BEGIN
+
+                                    SET @Cmd = ' DBCC SHRINKFILE (
+
+                                           N''' + @DataFile + '''
+
+                                           , ' + cast(@Cur_DB_Size AS VARCHAR) + '
+
+                                           ) '
+
+ 
+
+                                    EXEC (@Cmd)
+
+                             END
+
+                      END
+
+              END
+
+ 
+
+              FETCH NEXT
+
+              FROM Cur_Shrink_Loop
+
+              INTO @DataFile
+
+                      ,@TotSize
+
+                      ,@FreeSize
+
+                      ,@UseSize
+
+       END
+
+ 
+
+       CLOSE cur_shrink_loop
+
+ 
+
+       DEALLOCATE cur_shrink_loop
+
+END

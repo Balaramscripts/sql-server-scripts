@@ -1,0 +1,40 @@
+
+
+select top 5 LOCAL_TIME, GETDATE() as TodayDateTime,
+DATEDIFF(mi,LOCAL_TIME,GETDATE()) as [Latency in Minutes] from
+ESB_Transactions..TransactionsRequest with(nolock)
+
+order by 1 desc
+
+GO
+
+
+
+select top 5 LOCAL_TIME, GETDATE() as TodayDateTime,
+DATEDIFF(mi,LOCAL_TIME,GETDATE()) as [Latency in Minutes] from
+ESB_Transactions..TransactionsResponse with(nolock)
+
+order by 1 desc
+
+GO
+
+ 
+
+select top 5 Local_datetime, GETDATE() as TodayDateTime,
+DATEDIFF(mi,Local_datetime,GETDATE()) as [Latency in Minutes] from
+ESB_Transactions.dbo.ESB_RupayEMVAckRequest with(nolock)
+
+order by Local_datetime desc
+
+GO
+
+ 
+
+select top 5 RequestDateTime, GETDATE() as TodayDateTime,
+DATEDIFF(mi,RequestDateTime,GETDATE()) as [Latency in Minutes] from
+ESB_Transactions.dbo.ESB_RupayEMVReversalReq with(nolock)
+
+order by RequestDateTime desc
+
+GO
+

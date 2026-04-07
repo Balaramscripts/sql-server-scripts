@@ -1,0 +1,49 @@
+SELECT 
+    OBJECT_NAME(i.object_id) AS TableName,
+    i.name AS IndexName,
+    i.type_desc AS IndexType,
+    s.user_seeks,
+    s.user_scans,
+    s.user_lookups,
+    s.user_updates,
+    s.last_user_seek,
+    s.last_user_scan,
+    s.last_user_lookup
+FROM 
+    sys.indexes i
+LEFT JOIN 
+    sys.dm_db_index_usage_stats s ON s.object_id = i.object_id 
+    AND s.index_id = i.index_id
+    AND s.database_id = DB_ID()
+WHERE 
+    OBJECT_NAME(i.object_id) IS NOT NULL
+    AND i.name IS NOT NULL
+    AND i.is_primary_key = 0
+    AND i.is_unique_constraint = 0
+    AND i.name = 'YourIndexName' -- Replace with your index name or remove to see all
+ORDER BY 
+    TableName, IndexName;
+
+______________
+SELECT 
+    OBJECT_NAME(i.object_id) AS TableName,
+    i.name AS IndexName,
+    i.type_desc AS IndexType,
+    CASE 
+        WHEN s.user_seeks IS NULL AND s.user_scans IS NULL AND s.user_lookups IS NULL THEN 'Never used'
+        WHEN (s.user_seeks + s.user_scans + s.user_lookups) = 0 THEN 'Not used'
+        ELSE 'Used'
+    END AS UsageStatus
+FROM 
+    sys.indexes i
+LEFT JOIN 
+    sys.dm_db_index_usage_stats s ON s.object_id = i.object_id 
+    AND s.index_id = i.index_id
+    AND s.database_id = DB_ID()
+WHERE 
+    OBJECT_NAME(i.object_id) IS NOT NULL
+    AND i.name IS NOT NULL
+    AND i.is_primary_key = 0
+    AND i.is_unique_constraint = 0
+ORDER BY 
+    TableName, IndexName;

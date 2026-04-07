@@ -1,0 +1,53 @@
+
+
+USE master;
+GO
+
+SELECT
+    te.name AS EventName,
+    v.subclass_name,
+    t.DatabaseName,
+    t.ObjectName,
+    t.HostName,
+    t.ApplicationName,
+    t.LoginName,
+    t.Duration,
+    t.StartTime,
+    t.EndTime
+FROM
+    (SELECT
+         DatabaseName,
+         CASE WHEN ObjectName = ' ' THEN NULL ELSE ObjectName END AS ObjectName,
+         HostName,
+         ApplicationName,
+         LoginName,
+         Duration,
+         StartTime,
+         EndTime,
+         EventClass,
+         EventSubClass,
+         t2.traceid
+     FROM
+         (SELECT
+              traceid
+          FROM
+              ::fn_trace_getinfo(default)) t2
+     CROSS APPLY
+         ::fn_trace_gettable(CONVERT(nvarchar(128), (SELECT
+                                  value
+                              FROM
+                                  ::fn_trace_getinfo(t2.traceid)
+                              WHERE
+                                  property = 2)), default) t1
+     WHERE
+         EventClass in (46, 47, 164) -- 46=Object:Created, 47=Objecteleted, 164=Object:Altered
+    ) AS t
+JOIN
+    sys.trace_events te ON t.EventClass = te.trace_event_id
+JOIN
+    sys.trace_subclass_values v ON t.EventSubClass = v.subclass_value AND t.EventClass = v.trace_event_id
+WHERE
+    te.name IN ('Object:Created', 'Objecteleted', 'Object:Altered')
+        AND t.DatabaseName not in ('master', 'msdb', 'tempdb')
+ORDER BY
+    StartTime DESC;

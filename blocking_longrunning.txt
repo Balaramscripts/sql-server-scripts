@@ -1,0 +1,49 @@
+WITH ActiveRequests AS (
+    SELECT 
+        r.session_id,
+        r.blocking_session_id,
+        s.host_name,
+        s.program_name,
+        s.login_name,
+        DB_NAME(r.database_id) AS DatabaseName,
+        r.status,
+        r.wait_type,
+        r.wait_time,
+        r.wait_resource,
+        r.cpu_time,
+        r.logical_reads,
+        r.reads,
+        r.writes,
+        r.total_elapsed_time / 1000 AS ElapsedTime_Sec,
+        r.command,
+        q.text AS SQLQuery
+    FROM sys.dm_exec_requests r
+    JOIN sys.dm_exec_sessions s ON r.session_id = s.session_id
+    CROSS APPLY sys.dm_exec_sql_text(r.sql_handle) q
+    WHERE r.session_id <> @@SPID  -- Exclude the current session
+)
+SELECT 
+    A.session_id AS SPID,
+    A.blocking_session_id AS BlockingSPID,
+    A.host_name,
+    A.program_name,
+    A.login_name,
+    A.DatabaseName,
+    A.status,
+    A.wait_type,
+    A.wait_time,
+    A.wait_resource,
+    A.cpu_time,
+    A.logical_reads,
+    A.reads,
+    A.writes,
+    A.ElapsedTime_Sec,
+    A.command,
+    A.SQLQuery,
+    CASE 
+        WHEN A.blocking_session_id = 0 THEN 'Not Blocked'
+        ELSE 'Blocked'
+    END AS BlockingStatus
+FROM ActiveRequests A
+ORDER BY A.blocking_session_id DESC, A.ElapsedTime_Sec DESC;
+--------------------------------------------------------------------------------------------------

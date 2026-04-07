@@ -1,0 +1,27 @@
+
+
+dbcc sqlperf(logspace)
+
+select name,log_reuse_wait_desc from sys.databases where name='ESB_Transactions'
+
+use ESB_Transactions
+go
+checkpoint
+go
+dbcc shrinkfile(2)
+go
+
+select * from sys.sysprocesses where blocked <> 0
+
+select loginame, cpu, memusage, physical_io, * 
+  from  master..sysprocesses a
+ where  exists ( select b.*
+    from master..sysprocesses b
+    where b.blocked > 0 and
+   b.blocked = a.spid ) and not
+ exists ( select b.*
+     from master..sysprocesses b
+    where b.blocked > 0 and
+   b.spid = a.spid ) 
+order by spid
+

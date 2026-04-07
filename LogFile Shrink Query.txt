@@ -1,0 +1,14 @@
+
+---------To check Log size,log file name----------
+select b.name,a.name,(a.size*8)/(1024*1024)as log,c.log_reuse_wait_desc from sys.sysaltfiles a,sys.sysdatabases b,sys.databases c
+where a.dbid = b.dbid and b.dbid=c.database_id and
+a.filename like '%.ldf' and (a.size*8)/(1024*1024)>0.9 order by log desc
+go
+
+
+----------log file shrink query-----
+--use dbname
+--dbcc shrinkfile ('filename',256)
+
+
+

@@ -1,0 +1,8 @@
+--USE [DATABASENAME]
+--GO
+
+--STEP-1
+exec sp_repldone @xactid = NULL, @xact_seqno = NULL, @numtrans = 0, @time = 0, @reset = 1
+
+--STEP-2
+sp_replflush

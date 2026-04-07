@@ -1,0 +1,72 @@
+vUSE msdb;
+GO
+SELECT 
+    bs.database_name,
+    bs.backup_start_date,
+    bs.backup_finish_date,
+    DATEDIFF(MINUTE, bs.backup_start_date, bs.backup_finish_date) AS Duration_Min,
+    bmf.physical_device_name AS Backup_File
+FROM backupset bs
+INNER JOIN backupmediafamily bmf 
+    ON bs.media_set_id = bmf.media_set_id
+WHERE bs.type = 'D' -- 'D' = Full backup, 'I' = Differential, 'L' = Log
+  AND bs.database_name = 'YourDBName'
+ORDER BY bs.backup_finish_date DESC;
+
+-----------------------only fullbackup with time -------------------------------------------------------------------
+USE msdb;
+GO
+
+SELECT  
+    bs.database_name AS [Database_Name],
+    bs.backup_start_date AS [Backup_Start_Date],
+    bs.backup_finish_date AS [Backup_Finish_Date],
+    DATEDIFF(MINUTE, bs.backup_start_date, bs.backup_finish_date) AS [Duration_Minutes],
+    CAST(bs.backup_size / 1024.0 / 1024.0 / 1024.0 AS DECIMAL(10,2)) AS [Backup_Size_GB],
+    bmf.physical_device_name AS [Backup_File_Path],
+    bs.user_name AS [Backup_Taken_By]
+FROM msdb.dbo.backupset bs
+INNER JOIN msdb.dbo.backupmediafamily bmf
+    ON bs.media_set_id = bmf.media_set_id
+WHERE bs.type = 'D' -- 'D' = Full Backup
+  AND bs.backup_start_date >= DATEADD(MONTH, -3, GETDATE()) -- Last 3 months
+------------------------------------------------------
+USE msdb;
+GO
+
+DECLARE @DatabaseName SYSNAME = 'MATCHPOINT_RECON_PROD_UPI'; -- \uD83D\uDD39 Change this to your DB name
+
+SELECT  
+    bs.database_name AS [Database_Name],
+    bs.backup_start_date AS [Backup_Start_Date],
+    bs.backup_finish_date AS [Backup_Finish_Date],
+    DATEDIFF(MINUTE, bs.backup_start_date, bs.backup_finish_date) AS [Duration_Minutes],
+    CAST(bs.backup_size / 1024.0 / 1024.0 / 1024.0 AS DECIMAL(10,2)) AS [Backup_Size_GB],
+    bmf.physical_device_name AS [Backup_File_Path],
+    bs.user_name AS [Backup_Taken_By]
+FROM msdb.dbo.backupset bs
+INNER JOIN msdb.dbo.backupmediafamily bmf
+    ON bs.media_set_id = bmf.media_set_id
+WHERE bs.type = 'D'
+
+---------------------------------------------------------------------------
+USE msdb;
+GO
+
+SELECT  
+    bs.database_name AS [Database_Name],
+    bs.backup_start_date AS [Backup_Start_Date],
+    bs.backup_finish_date AS [Backup_Finish_Date],
+    DATEDIFF(MINUTE, bs.backup_start_date, bs.backup_finish_date) AS [Duration_Minutes],
+    CAST(bs.backup_size / 1024.0 / 1024.0 / 1024.0 AS DECIMAL(10,2)) AS [Backup_Size_GB],
+    bmf.physical_device_name AS [Backup_File_Path],
+    bs.user_name AS [Backup_Taken_By]
+FROM msdb.dbo.backupset bs
+INNER JOIN msdb.dbo.backupmediafamily bmf
+    ON bs.media_set_id = bmf.media_set_id
+WHERE 
+    bs.type = 'D' -- 'D' = Full Backup
+    AND bs.database_name = 'MATCHPOINT_RECON_PROD_UPI' -- \uD83D\uDD39 Only this database
+    AND bs.backup_start_date >= DATEADD(MONTH, -3, GETDATE()) -- \uD83D\uDD39 Last 3 months
+ORDER BY 
+    bs.backup_finish_date DESC;

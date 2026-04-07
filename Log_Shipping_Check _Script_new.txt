@@ -1,0 +1,21 @@
+
+SELECT
+        [lss].[primary_database]
+        ,CASE WHEN  datediff(minute,[lssd].[last_restored_date],getdate()) < 60 then 'SYNCHRONIZED'
+         WHEN  datediff(minute,[lssd].[last_restored_date],getdate()) > 60 then 'NOT SYNCHRONIZED'
+          ELSE 'NA'
+     END [Status]
+         ,[ms].[last_restored_latency] as 'Last_Restored_file_Latency_in_min'
+        ,ms.last_restored_latency/60 as 'Last_Restored_file_Latency_in_Hours'
+        ,[lss].[last_copied_file]
+        ,[lss].[last_copied_date]
+        ,[lssd].[secondary_database]
+        ,[lssd].[last_restored_file]
+        ,[lssd].[last_restored_date]
+        
+        FROM [msdb].[dbo].[log_shipping_secondary] AS lss
+INNER JOIN [msdb].[dbo].[log_shipping_secondary_databases] AS lssd
+        ON [lss].[primary_database] = [lssd].[secondary_database]
+                INNER JOIN [msdb].[dbo].[log_shipping_monitor_secondary]  as ms
+                on ms.secondary_id=lssd.secondary_id
+ORDER BY [lss].[primary_database]

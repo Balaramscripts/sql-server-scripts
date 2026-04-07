@@ -1,0 +1,40 @@
+SELECT name AS LoginName,
+       is_disabled,
+       LOGINPROPERTY(name, 'IsLocked') AS IsLocked
+FROM sys.sql_logins
+WHERE LOGINPROPERTY(name, 'IsLocked') = 1;
+----------------------------------------------------------
+SELECT name AS LoginName,
+       is_disabled,
+       LOGINPROPERTY(name, 'IsLocked') AS IsLocked,
+       LOGINPROPERTY(name, 'BadPasswordCount') AS FailedAttempts,
+       LOGINPROPERTY(name, 'LockoutTime') AS LockoutTime
+FROM sys.sql_logins
+ORDER BY IsLocked DESC, FailedAttempts DESC;
+
+--------------------------------------------------------------
+SELECT 
+    name AS LoginName,
+    type_desc AS LoginType,
+    is_disabled,
+    LOGINPROPERTY(name, 'IsLocked') AS IsLocked,
+    LOGINPROPERTY(name, 'BadPasswordCount') AS FailedAttempts,
+    LOGINPROPERTY(name, 'LockoutTime') AS LockoutTime,
+    LOGINPROPERTY(name, 'PasswordLastSetTime') AS PasswordSetOn,
+    LOGINPROPERTY(name, 'BadPasswordTime') AS LastFailedLogin,
+    LOGINPROPERTY(name, 'PasswordExpirationDate') AS PasswordExpiresOn
+FROM sys.sql_logins
+WHERE LOGINPROPERTY(name, 'IsLocked') = 1;
+-----------------------------------------------------------------------------
+SELECT object_name(object_id) AS TableName, *
+FROM sys.dm_db_index_physical_stats (DB_ID(), NULL, NULL, NULL, 'DETAILED')
+WHERE avg_page_space_used_in_percent < 50;
+-----------------------------------------------------------------------------
+SELECT
+    percent_complete,
+    estimated_completion_time / 1000 / 60 AS minutes_remaining,
+    status,
+    command
+FROM sys.dm_exec_requests
+WHERE command LIKE '%shrink%';
+------------------------------------------------------------------------

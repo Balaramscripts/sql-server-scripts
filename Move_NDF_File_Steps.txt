@@ -1,0 +1,55 @@
+
+Steps to Move an .ndf File in SQL Server
+========================================
+
+1. Get the Logical Name and Current Path
+----------------------------------------
+Run this query to find the file’s logical name and physical location:
+
+USE master;
+GO
+SELECT name AS LogicalName, physical_name AS CurrentPath
+FROM sys.master_files
+WHERE database_id = DB_ID('YourDatabaseName');
+
+
+2. Take the Database Offline (or Set it to Single User Mode)
+-------------------------------------------------------------
+Option A: Take the database offline
+ALTER DATABASE YourDatabaseName SET OFFLINE;
+
+Option B: Or set to single-user mode if you want minimal downtime
+ALTER DATABASE YourDatabaseName SET SINGLE_USER WITH ROLLBACK IMMEDIATE;
+
+
+3. Move the `.ndf` File Physically
+----------------------------------
+Using Windows Explorer or a command-line tool, move the `.ndf` file from its current location 
+(e.g., D:\OldFolder\YourFile.ndf) to the new location (e.g., E:\NewFolder\YourFile.ndf).
+
+
+4. Modify the File Path in SQL Server
+-------------------------------------
+Update SQL Server with the new path:
+
+ALTER DATABASE YourDatabaseName 
+MODIFY FILE ( 
+    NAME = LogicalFileName, 
+    FILENAME = 'E:\NewFolder\YourFile.ndf'
+);
+
+
+5. Bring the Database Back Online
+---------------------------------
+ALTER DATABASE YourDatabaseName SET ONLINE;
+-- Or, if you used single-user mode:
+ALTER DATABASE YourDatabaseName SET MULTI_USER;
+
+
+6. Verify the New Location
+---------------------------
+Confirm the `.ndf` file is now recognized in the new location:
+
+SELECT name, physical_name 
+FROM sys.master_files 
+WHERE database_id = DB_ID('YourDatabaseName');

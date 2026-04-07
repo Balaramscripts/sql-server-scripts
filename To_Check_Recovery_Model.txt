@@ -1,0 +1,10 @@
+use msdb
+go
+  SELECT  b.database_name,s.recovery_model_desc
+                    ,MAX(CASE WHEN b.type = 'D' THEN b.backup_finish_date ELSE NULL END ) as 'LAST_FULL_BACKUP'
+                  ,MAX(CASE WHEN b.type = 'I' THEN b.backup_finish_date ELSE NULL END) AS 'LAST_DIFFERENTIAL_BACKUP'
+                    ,MAX(CASE WHEN b.type = 'L' THEN b.backup_finish_date ELSE NULL END) AS 'LAST_LOG_BACKUP'
+             FROM backupset b inner join sys.databases s on b.database_name=s.name
+GROUP BY b.database_name,s.recovery_model_desc
+ORDER BY b.database_name DESC
+

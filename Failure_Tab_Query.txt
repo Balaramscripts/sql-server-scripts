@@ -1,0 +1,26 @@
+USE PBLOGS
+GO
+
+Declare @DateTime datetime= DATEADD(minute, -2, convert(datetime,convert(char(16), getdate(), 120)))
+
+select Corelation_Request, Request_Type, Layer_Name, Response_Message, Node_IP_Address, count(1) as [Count], RequestOut from  
+(select Corelation_Request, Request_Type, Layer_Name, Response_Message, Node_IP_Address, RequestOut 
+from PBLogs.dbo.Tbl_Corelation_Log x with (nolock  index=Ix_RequestOut) left outer join temp_mstRequestType mstR on x.Method_ID = mstr.Method_ID and x.Service_ID = mstr.Service_ID left outer join temp_mstLayer L on x.Layer_ID = L.Layer_ID 
+where RequestOut>=@DateTime and Response_Flag='1' and Response_Message<>'' and Layer_Name='UI' and Response_Message like '%Failed%' 
+Union all 
+select Corelation_Request, Request_Type, Layer_Name, Response_Message, Node_IP_Address, RequestOut 
+from PBLogs.dbo.Tbl_Corelation_Log x with (nolock  index=Ix_RequestOut) left outer join temp_mstRequestType mstR on x.Method_ID = mstr.Method_ID and x.Service_ID = mstr.Service_ID left outer join temp_mstLayer L on x.Layer_ID = L.Layer_ID 
+where RequestOut>=@DateTime and Response_Flag='1' and Response_Message<>'' and Layer_Name='UI'and Response_Message like '%Error%' 
+Union all 
+select Corelation_Request, Request_Type, Layer_Name, Response_Message, Node_IP_Address, RequestOut 
+from PBLogs.dbo.Tbl_Corelation_Log x with (nolock  index=Ix_RequestOut) left outer join temp_mstRequestType mstR on x.Method_ID = mstr.Method_ID and x.Service_ID = mstr.Service_ID left outer join temp_mstLayer L on x.Layer_ID = L.Layer_ID 
+where RequestOut>=@DateTime and Response_Flag='1' and mstR.Service_ID  not in('3','19') and Layer_Name='UI'and Response_Message like '%Primary%' 
+Union all  
+select Corelation_Request, Request_Type, Layer_Name, Response_Message, Node_IP_Address, RequestOut 
+from PBLogs.dbo.Tbl_Corelation_Log x with (nolock  index=Ix_RequestOut) left outer join temp_mstRequestType mstR on x.Method_ID = mstr.Method_ID and x.Service_ID = mstr.Service_ID left outer join temp_mstLayer L on x.Layer_ID = L.Layer_ID 
+where RequestOut>=@DateTime and Response_Flag='1' and Response_Message<>'' and Layer_Name='UI' and Response_Message like '%Server%' 
+Union all  
+select Corelation_Request, Request_Type, Layer_Name, Response_Message, Node_IP_Address, RequestOut 
+from PBLogs.dbo.Tbl_Corelation_Log x with (nolock  index=Ix_RequestOut) left outer join temp_mstRequestType mstR on x.Method_ID = mstr.Method_ID and x.Service_ID = mstr.Service_ID left outer join temp_mstLayer L on x.Layer_ID = L.Layer_ID 
+where RequestOut>=@DateTime and Response_Flag='1' and Response_Message<>'' and Layer_Name='UI' and Response_Message like '%IMPS Disable%') As temp 
+group by Corelation_Request,Request_Type,Layer_Name,Response_Message,Node_IP_Address,RequestOut order by RequestOut desc

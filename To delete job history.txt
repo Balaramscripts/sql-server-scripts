@@ -1,0 +1,15 @@
+USE MSDB
+
+GO
+
+DECLARE @DeleteBeforeDate DateTime
+
+SELECT @DeleteBeforeDate = 'JAN 1 2019'
+
+EXEC msdb.dbo.sp_purge_jobhistory  @job_name = 'YourJobName', @oldest_date=@DeleteBeforeDate
+
+GO
+
+ 
+
+ 

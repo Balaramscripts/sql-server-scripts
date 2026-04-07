@@ -1,0 +1,229 @@
+CREATE TABLE #DatabaseSpace (
+    DatabaseName SYSNAME,
+    FileName SYSNAME,
+    FileType VARCHAR(20),
+    TotalSizeMB DECIMAL(10, 2),
+    UsedSpaceMB DECIMAL(10, 2),
+    FreeSpaceMB DECIMAL(10, 2),
+    FreeSpacePct DECIMAL(5, 2)
+);
+
+EXEC sp_MSforeachdb '
+USE [?];
+INSERT INTO #DatabaseSpace
+SELECT 
+    DB_NAME() AS DatabaseName,
+    name AS FileName,
+    type_desc AS FileType,
+    CAST(size / 128.0 AS DECIMAL(10, 2)) AS TotalSizeMB,
+    CAST(FILEPROPERTY(name, ''SpaceUsed'') / 128.0 AS DECIMAL(10, 2)) AS UsedSpaceMB,
+    CAST((size - FILEPROPERTY(name, ''SpaceUsed'')) / 128.0 AS DECIMAL(10, 2)) AS FreeSpaceMB,
+    CAST(((size - FILEPROPERTY(name, ''SpaceUsed'')) / (size * 1.0)) * 100 AS DECIMAL(10, 2)) AS FreeSpacePct
+FROM sys.database_files;';
+
+SELECT * FROM #DatabaseSpace ORDER BY FreeSpaceMB DESC;
+
+DROP TABLE #DatabaseSpace;
+--------------------------------------------------------------------------------------------------
+Automate shrinking db
+
+DECLARE @TargetPercent INT = 20; -- Set your threshold here
+
+IF OBJECT_ID('tempdb..#ShrinkWork') IS NOT NULL DROP TABLE #ShrinkWork;
+CREATE TABLE #ShrinkWork (DbName SYSNAME, FileName SYSNAME, FreePct DECIMAL(5,2));
+
+EXEC sp_MSforeachdb '
+USE [?];
+INSERT INTO #ShrinkWork
+SELECT DB_NAME(), name, 
+CAST(((size - FILEPROPERTY(name, ''SpaceUsed'')) / (size * 1.0)) * 100 AS DECIMAL(10, 2))
+FROM sys.database_files 
+WHERE CAST(((size - FILEPROPERTY(name, ''SpaceUsed'')) / (size * 1.0)) * 100 AS DECIMAL(10, 2)) > ' + @TargetPercent;
+
+-- Generate the commands
+SELECT 
+    DbName, 
+    FileName, 
+    FreePct AS [CurrentFree%],
+    'USE [' + DbName + ']; DBCC SHRINKFILE (N''' + FileName + ''' , TRUNCATEONLY);' AS [GeneratedCommand]
+FROM #ShrinkWork
+ORDER BY FreePct DESC;
+
+
+
+--------------------------------------------------------------------------------------------------
+
+SELECT DB_NAME() AS DbName, 
+    name AS FileName, 
+    type_desc,
+    size/128.0 AS CurrentSizeMB,  
+    size/128.0 - CAST(FILEPROPERTY(name, 'SpaceUsed') AS INT)/128.0 AS FreeSpaceMB
+FROM sys.database_files
+WHERE type IN (0,1);
+------------------------------------
+-- Create a temporary table to store the results
+IF OBJECT_ID('tempdb..#DBFreeSpace') IS NOT NULL 
+    DROP TABLE #DBFreeSpace;
+
+CREATE TABLE #DBFreeSpace (
+    DatabaseName SYSNAME,
+    LogicalFileName SYSNAME,
+    PhysicalFileName NVARCHAR(520),
+    FileType NVARCHAR(60),
+    TotalSizeMB DECIMAL(18, 2),
+    UsedSpaceMB DECIMAL(18, 2),
+    FreeSpaceMB DECIMAL(18, 2),
+    FreeSpacePct DECIMAL(18, 2)
+);
+
+-- Execute the check against every database
+DECLARE @command VARCHAR(MAX);
+SET @command = '
+USE [?];
+INSERT INTO #DBFreeSpace (DatabaseName, LogicalFileName, PhysicalFileName, FileType, TotalSizeMB, UsedSpaceMB, FreeSpaceMB, FreeSpacePct)
+SELECT 
+    DB_NAME() AS DatabaseName,
+    name AS LogicalFileName,
+    physical_name AS PhysicalFileName,
+    type_desc AS FileType,
+    CAST(size / 128.0 AS DECIMAL(18, 2)) AS TotalSizeMB,
+    CAST(FILEPROPERTY(name, ''SpaceUsed'') / 128.0 AS DECIMAL(18, 2)) AS UsedSpaceMB,
+    CAST((size - FILEPROPERTY(name, ''SpaceUsed'')) / 128.0 AS DECIMAL(18, 2)) AS FreeSpaceMB,
+    CAST((size - FILEPROPERTY(name, ''SpaceUsed'')) * 100.0 / size AS DECIMAL(18, 2)) AS FreeSpacePct
+FROM sys.database_files;';
+
+EXEC sp_MSforeachdb @command;
+
+-- View the results sorted by the most available free space
+SELECT * 
+FROM #DBFreeSpace 
+ORDER BY FreeSpaceMB DESC;
+
+-- Clean up
+-- DROP TABLE #DBFreeSpace;
+--------------------------------------------------------------------------------------
+SET NOCOUNT ON;
+
+-- Use a CTE for cleaner, set-based logic without tempdb overhead
+WITH DatabaseFileStats AS (
+    SELECT 
+        DB_NAME(f.database_id) AS DatabaseName,
+        f.name AS LogicalFileName,
+        f.type_desc AS FileType,
+        -- Convert 8KB pages to GB (size / 131072.0)
+        CAST(f.size / 131072.0 AS DECIMAL(18, 2)) AS TotalSizeGB,
+        -- FILEPROPERTY is safe but must be executed per file
+        CAST(FILEPROPERTY(f.name, 'SpaceUsed') / 131072.0 AS DECIMAL(18, 2)) AS UsedSpaceGB,
+        CASE 
+            WHEN f.is_percent_growth = 1 THEN CAST(f.growth AS VARCHAR(10)) + '%'
+            ELSE CAST(f.growth / 128 AS VARCHAR(10)) + ' MB'
+        END AS AutoGrowth,
+        f.physical_name AS PhysicalFileName
+    FROM sys.master_files f
+    WHERE f.database_id > 0 -- Exclude internal system resources
+)
+SELECT 
+    DatabaseName,
+    LogicalFileName,
+    FileType,
+    TotalSizeGB,
+    -- Calculation: Free Space GB
+    CAST(TotalSizeGB - UsedSpaceGB AS DECIMAL(18, 2)) AS FreeSpaceGB,
+    -- Calculation: Free Space Percentage
+    CAST(((TotalSizeGB - UsedSpaceGB) * 100.0) / NULLIF(TotalSizeGB, 0) AS DECIMAL(18, 2)) AS FreeSpacePct,
+    AutoGrowth,
+    PhysicalFileName
+FROM DatabaseFileStats
+ORDER BY FreeSpaceGB DESC; -- Big to small
+
+------------------------------------------------------------------------------------
+SET NOCOUNT ON;
+
+-- 1. Create temporary table for database file details
+IF OBJECT_ID('tempdb..#DBSpaceInfo') IS NOT NULL 
+    DROP TABLE #DBSpaceInfo;
+
+CREATE TABLE #DBSpaceInfo (
+    DatabaseName SYSNAME,
+    LogicalFileName SYSNAME,
+    PhysicalFileName NVARCHAR(520),
+    FileType NVARCHAR(60),
+    TotalSizeGB DECIMAL(18, 2), -- Changed to GB
+    UsedSpaceGB DECIMAL(18, 2), -- Changed to GB
+    FreeSpaceGB DECIMAL(18, 2), -- Changed to GB
+    FreeSpacePct DECIMAL(18, 2),
+    AutoGrowth NVARCHAR(100)
+);
+
+-- 2. Loop through all databases to gather internal file space
+DECLARE @DBName SYSNAME;
+DECLARE @SQL NVARCHAR(MAX);
+
+DECLARE db_cursor CURSOR FOR 
+SELECT name FROM sys.databases WHERE state_desc = 'ONLINE';
+
+OPEN db_cursor;
+FETCH NEXT FROM db_cursor INTO @DBName;
+
+WHILE @@FETCH_STATUS = 0
+BEGIN
+    SET @SQL = '
+    USE [' + @DBName + '];
+    INSERT INTO #DBSpaceInfo (DatabaseName, LogicalFileName, PhysicalFileName, FileType, TotalSizeGB, UsedSpaceGB, FreeSpaceGB, FreeSpacePct, AutoGrowth)
+    SELECT 
+        DB_NAME() AS DatabaseName,
+        name AS LogicalFileName,
+        physical_name AS PhysicalFileName,
+        type_desc AS FileType,
+        CAST(size / 131072.0 AS DECIMAL(18, 2)), -- 128.0 * 1024 for GB
+        CAST(FILEPROPERTY(name, ''SpaceUsed'') / 131072.0 AS DECIMAL(18, 2)),
+        CAST((size - FILEPROPERTY(name, ''SpaceUsed'')) / 131072.0 AS DECIMAL(18, 2)),
+        CAST((size - FILEPROPERTY(name, ''SpaceUsed'')) * 100.0 / size AS DECIMAL(18, 2)),
+        CASE 
+            WHEN is_percent_growth = 1 THEN CAST(growth AS VARCHAR(10)) + ''%''
+            ELSE CAST(growth / 128 AS VARCHAR(10)) + '' MB''
+        END AS AutoGrowth
+    FROM sys.database_files;';
+    
+    EXEC sp_executesql @SQL;
+    FETCH NEXT FROM db_cursor INTO @DBName;
+END;
+
+CLOSE db_cursor;
+DEALLOCATE db_cursor;
+
+-- 3. Gather physical disk drive information
+IF OBJECT_ID('tempdb..#DiskVolumes') IS NOT NULL 
+    DROP TABLE #DiskVolumes;
+
+SELECT DISTINCT 
+    volume_mount_point AS [Drive],
+    logical_volume_name AS [VolumeName],
+    total_bytes / 1024 / 1024 / 1024 AS [Drive_Total_GB],
+    available_bytes / 1024 / 1024 / 1024 AS [Drive_Free_GB],
+    CAST(CAST(available_bytes AS FLOAT) / CAST(total_bytes AS FLOAT) * 100 AS DECIMAL(10, 2)) AS [Drive_Free_Pct]
+INTO #DiskVolumes
+FROM sys.master_files AS f
+CROSS APPLY sys.dm_os_volume_stats(f.database_id, f.file_id);
+
+-- 4. Final Output: Sorted by Free Space (Big to Small)
+SELECT 
+    s.DatabaseName,
+    s.LogicalFileName,
+    s.FileType,
+    s.TotalSizeGB,
+    s.FreeSpaceGB,
+    s.FreeSpacePct,
+    s.AutoGrowth,
+    d.Drive,
+    d.Drive_Free_GB,
+    d.Drive_Free_Pct,
+    s.PhysicalFileName
+FROM #DBSpaceInfo s
+LEFT JOIN #DiskVolumes d ON s.PhysicalFileName LIKE d.Drive + '%'
+ORDER BY s.FreeSpaceGB DESC; -- Sorting "Big to Small"
+
+-- Cleanup
+DROP TABLE #DBSpaceInfo;
+DROP TABLE #DiskVolumes;
+

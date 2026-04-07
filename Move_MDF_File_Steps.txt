@@ -1,0 +1,53 @@
+
+Steps to Move an .mdf File in SQL Server
+========================================
+
+1. Get the Logical Name and Current Path
+----------------------------------------
+Run this query to find the file’s logical name and physical location:
+
+USE master;
+GO
+SELECT name AS LogicalName, physical_name AS CurrentPath
+FROM sys.master_files
+WHERE database_id = DB_ID('YourDatabaseName');
+
+
+2. Take the Database Offline
+----------------------------
+You must take the database offline to move the primary data file (.mdf):
+
+ALTER DATABASE YourDatabaseName SET OFFLINE WITH ROLLBACK IMMEDIATE;
+
+
+3. Move the `.mdf` File Physically
+----------------------------------
+Using Windows Explorer or a command-line tool, move the `.mdf` file from its current location 
+(e.g., D:\OldFolder\YourFile.mdf) to the new location (e.g., E:\NewFolder\YourFile.mdf).
+
+NOTE: You must also move the associated .ldf (log file) if it’s in the same folder or required for startup.
+
+
+4. Modify the File Path in SQL Server
+-------------------------------------
+Update SQL Server with the new path:
+
+ALTER DATABASE YourDatabaseName 
+MODIFY FILE ( 
+    NAME = LogicalFileName, 
+    FILENAME = 'E:\NewFolder\YourFile.mdf'
+);
+
+
+5. Bring the Database Back Online
+---------------------------------
+ALTER DATABASE YourDatabaseName SET ONLINE;
+
+
+6. Verify the New Location
+---------------------------
+Confirm the `.mdf` file is now recognized in the new location:
+
+SELECT name, physical_name 
+FROM sys.master_files 
+WHERE database_id = DB_ID('YourDatabaseName');

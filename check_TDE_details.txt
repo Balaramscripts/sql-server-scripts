@@ -1,0 +1,23 @@
+-- Get Server IP Address
+DECLARE @ServerIP NVARCHAR(50);
+
+SELECT TOP 1 
+    @ServerIP = local_net_address
+FROM sys.dm_exec_connections
+WHERE session_id = @@SPID;
+
+-- Get TDE Status for All Databases
+SELECT  
+    @ServerIP AS [Server_IP],
+    db.name AS [Database_Name],
+    CASE 
+        WHEN dm.encryption_state = 3 THEN 'Yes' 
+        ELSE 'No' 
+    END AS [TDE_Enabled],
+    cer.name AS [TDE_Certificate_Name]
+FROM sys.databases db
+LEFT JOIN sys.dm_database_encryption_keys dm 
+    ON db.database_id = dm.database_id
+LEFT JOIN sys.certificates cer 
+    ON dm.encryptor_thumbprint = cer.thumbprint
+ORDER BY db.name;

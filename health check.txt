@@ -1,0 +1,30 @@
+select @@version
+select name,state_desc,* from sys.databases where state_desc<>'online'
+select * from sys.dm_server_services
+
+EXEC xp_cmdshell 'NET USE'
+go
+-------------------------------
+
+
+
+--sp_configure 'xp_cmdshell', 1
+--GO
+--reconfigure
+--GO
+
+--EXEC xp_cmdshell 'NET USE B: /DELETE'
+--GO
+
+EXEC xp_cmdshell 'NET USE B: \\10.71.87.253\db_backup\ Techno@2023 /USER:db_backup /PERSISTENT:yes'
+GO
+
+EXEC xp_cmdshell 'NET USE U: \\10.101.14.22\fpb_backup\10.71.36.34\DIFF   th1s1sSQLp@sswdprod /USER:FINOPAYMENTBANK\SQLSVCAGENT_PRD /PERSISTENT:yes'
+GO
+
+--sp_configure 'xp_cmdshell', 0
+--GO
+--reconfigure
+--GO
+
+--EXEC xp_cmdshell 'NET USE'

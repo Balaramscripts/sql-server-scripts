@@ -1,0 +1,65 @@
+USE msdb;
+GO
+
+DECLARE @JobName NVARCHAR(128) = N'Your_Job_Name_Here';
+
+SELECT  
+    j.name AS JobName,
+    MIN(msdb.dbo.agent_datetime(h.run_date, h.run_time)) AS FirstHistoryDate,
+    MAmsdb.dbo.agent_datetime(h.run_date, h.run_time)) AS LastHistoryDate,
+    COUNT AS TotalHistoryRows
+FROM msdb.dbo.sysjobhistory h
+INNER JOIN msdb.dbo.sysjobs j 
+    ON h.job_id = j.job_id
+WHERE j.name = @JobName
+GROUP BY j.name;
+
+
+
+USE msdb;
+GO
+EXEC dbo.sp_purge_jobhistory  
+    @job_name = N'Your_Job_Name_Here',
+    @oldest_date = '2025-08-01';
+
+
+
+EXEC msdb.dbo.sp_purge_jobhistory @oldest_date = '2025-08-01';
+
+
+
+
+
+
+
+
+
+
+
+
+USE msdb;
+GO
+
+DECLARE @JobName NVARCHAR(128) = N'Your_Job_Name_Here';
+
+SELECT  
+    j.name AS JobName,
+    h.step_id,
+    h.step_name,
+    CASE h.run_status
+        WHEN 0 THEN 'Failed'
+        WHEN 1 THEN 'Succeeded'
+        WHEN 2 THEN 'Retry'
+        WHEN 3 THEN 'Canceled'
+        WHEN 4 THEN 'In Progress'
+    END AS ExecutionStatus,
+    msdb.dbo.agent_datetime(h.run_date, h.run_time) AS RunDateTime,
+    h.run_duration AS RunDuration,
+    h.sql_severity,
+    h.sql_message_id,
+    h.message AS FailureMessage
+FROM msdb.dbo.sysjobhistory h
+INNER JOIN msdb.dbo.sysjobs j 
+    ON h.job_id = j.job_id
+WHERE j.name = @JobName
+ORDER BY RunDateTime DESC;

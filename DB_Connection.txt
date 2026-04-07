@@ -1,0 +1,102 @@
+SELECT GETDATE() AS TodaysDate, DEC.client_net_address, des.host_name, DEC.local_tcp_port, des.login_name, COUNT(DEC.session_id) AS connection_count
+FROM sys.dm_exec_sessions AS des
+INNER JOIN sys.dm_exec_connections AS DEC ON des.session_id = DEC.session_id
+GROUP BY DEC.client_net_address
+	,des.host_name
+	,DEC.local_tcp_port
+	,des.login_name
+ORDER BY COUNT(DEC.session_id) DESC
+GO
+
+
+SELECT GETDATE() AS TodaysDate, DEC.client_net_address, des.program_name, des.host_name, des.login_time, des.login_name, COUNT(DEC.session_id) AS connection_count
+FROM sys.dm_exec_sessions AS des
+INNER JOIN sys.dm_exec_connections AS DEC ON des.session_id = DEC.session_id
+GROUP BY DEC.client_net_address
+	,des.program_name
+	,des.host_name
+	,des.login_name
+	,des.login_time 
+ORDER BY des.login_time DESC
+GO
+
+
+
+SELECT GETDATE() AS TodaysDate, DEC.client_net_address, des.program_name, des.host_name, des.login_time, des.login_name, COUNT(DEC.session_id) AS connection_count
+FROM sys.dm_exec_sessions AS des
+INNER JOIN sys.dm_exec_connections AS DEC ON des.session_id = DEC.session_id
+--WHERE des.nt_domain = 'FINOBANK' and des.login_time < cast(getdate() as date)
+--WHERE des.program_name = '.Net SqlClient Data Provider'
+GROUP BY DEC.client_net_address
+	,des.program_name
+	,des.host_name
+	,des.login_name
+	,des.login_time 
+ORDER BY des.login_time DESC
+GO
+
+
+
+SELECT GETDATE() AS TodaysDate, DEC.client_net_address, des.program_name, des.host_name, des.login_time, des.login_name, COUNT(DEC.session_id) AS connection_count
+FROM sys.dm_exec_sessions AS des
+INNER JOIN sys.dm_exec_connections AS DEC ON des.session_id = DEC.session_id
+--WHERE des.nt_domain = 'FINOBANK' and des.login_time < cast(getdate() as date)
+--WHERE des.program_name = '.Net SqlClient Data Provider'
+WHERE des.login_name LIKE '%vinay.yashwant' --'%OS00451'
+GROUP BY DEC.client_net_address
+	,des.program_name
+	,des.host_name
+	,des.login_name
+	,des.login_time 
+ORDER BY des.login_time DESC
+GO
+
+
+
+-- Application DB connections with status --
+SELECT GETDATE() AS TodaysDate, DEC.client_net_address, DEC.local_tcp_port, des.status, des.program_name, des.client_version, des.client_interface_name, des.host_name, db_name(des.database_id) as [database_name], des.login_time, des.login_name, COUNT(DEC.session_id) AS connection_count
+FROM sys.dm_exec_sessions AS des
+INNER JOIN sys.dm_exec_connections AS DEC ON des.session_id = DEC.session_id
+--WHERE des.nt_domain = 'FINOBANK' and des.login_time < cast(getdate() as date)
+--WHERE des.program_name = '.Net SqlClient Data Provider'
+--WHERE DEC.client_net_address LIKE '10.71.89%'
+--WHERE db_name(des.database_id) = 'Gyankosh2'
+GROUP BY DEC.client_net_address
+	,DEC.local_tcp_port
+	,des.status
+	,des.program_name
+	,des.client_version
+	,des.client_interface_name
+	,des.host_name
+	,db_name(des.database_id)
+	,des.login_name
+	,des.login_time 
+ORDER BY des.login_time DESC
+GO
+
+
+-- Find sleeping sessions detail --
+SELECT 
+    spid, 
+    loginame AS LoginName, 
+    hostname, 
+    program_name AS ProgramName, 
+    cmd, 
+    status, 
+    lastwaittype, 
+    waittime, 
+    waitresource, 
+    db_name(dbid) AS DatabaseName, 
+    last_batch AS LastBatchTime, 
+    DATEDIFF(MINUTE, last_batch, GETDATE()) AS MinutesSinceLastBatch,
+    (SELECT text AS LastTSQLCommand 
+        FROM sys.dm_exec_sql_text(sql_handle))
+FROM 
+    master.dbo.sysprocesses 
+WHERE 
+    status = 'sleeping' 
+    AND spid > 50 
+    AND DATEDIFF(MINUTE, last_batch, GETDATE()) > 3
+	AND db_name(dbid) not in ('master', 'msdb', 'tempdb')
+ORDER BY 
+    MinutesSinceLastBatch DESC;

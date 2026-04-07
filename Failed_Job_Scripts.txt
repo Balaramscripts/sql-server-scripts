@@ -1,0 +1,25 @@
+SELECT
+   distinct(j.name) as JobName,
+    LastRunDateTime =
+    CONVERT(DATETIME, CONVERT(CHAR(8), run_date, 112) + ' '
+    + STUFF(STUFF(RIGHT('000000' + CONVERT(VARCHAR(8), run_time), 6), 5, 0, ':'), 3, 0, ':'), 121),
+
+         CASE WHEN JH.run_status=0 THEN 'Failed'
+                     WHEN JH.run_status=1 THEN 'Succeeded'
+                     WHEN JH.run_status=2 THEN 'Retry'
+                     WHEN JH.run_status=3 THEN 'Cancelled'
+               ELSE 'Unknown'
+          END [Job Outcome]
+FROM
+    msdb..sysjobs j
+INNER JOIN
+    msdb..sysjobhistory jh ON j.job_id = jh.job_id
+WHERE
+    CONVERT(DATETIME, CONVERT(CHAR(8), run_date, 112) + ' '
+    + STUFF(STUFF(RIGHT('000000' + CONVERT(VARCHAR(8), run_time), 6), 5, 0, ':'), 3, 0, ':'), 121) > DATEADD(HOUR, -24, GETDATE())
+        and j.name not like '%alert%'
+        and j.name not like '%LSBackup%'
+        and j.name not like '%LScopy%'
+        and j.name not like '%LSrestore%'
+        and enabled=1
+        and JH.run_status in (0,2)

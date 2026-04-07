@@ -1,0 +1,59 @@
+USE master;
+GO
+
+SELECT db.name AS DatabaseName,
+       dm.encryption_state,
+       CONVERT(VARCHAR(40), dm.encryptor_thumbprint, 2) AS encryptor_thumbprint,
+       c.name AS CertificateName, 
+       CONVERT(VARCHAR(40), c.thumbprint, 2) AS cert_thumbprint
+FROM sys.dm_database_encryption_keys dm
+JOIN sys.databases db ON dm.database_id = db.database_id
+LEFT JOIN sys.certificates c ON dm.encryptor_thumbprint = c.thumbprint;
+GO
+
+
+-------
+
+USE master;
+GO
+
+BACKUP CERTIFICATE [YourCertificateName] -- replace with actual certificate name
+TO FILE = 'C:\Temp\TDE_cert_new.cer'
+WITH PRIVATE KEY (
+  FILE = 'C:\Temp\TDE_cert_new_privatekey.pvk', -- or .key if you prefer
+  ENCRYPTION BY PASSWORD = 'PickAStrongPassword!23'
+);
+GO
+----------
+USE master;
+GO
+
+IF NOT EXISTS (SELECT 1 FROM sys.symmetric_keys WHERE name = '##MS_DatabaseMasterKey##')
+BEGIN
+  CREATE MASTER KEY ENCRYPTION BY PASSWORD = 'StrongMasterKeyPassword!23';
+  PRINT 'Master key created';
+END
+ELSE
+  PRINT 'Master key already exists';
+GO
+--------
+USE master;
+GO
+
+CREATE CERTIFICATE [YourCertificateName] -- same name is fine but not required
+FROM FILE = 'D:\TDE\TDE_cert_new.cer'
+WITH PRIVATE KEY (
+  FILE = 'D:\TDE\TDE_cert_new_privatekey.pvk',
+  DECRYPTION BY PASSWORD = 'PickAStrongPassword!23' -- same password you set on source
+);
+GO
+---------
+SELECT name, subject, thumbprint, create_date 
+FROM sys.certificates
+WHERE name = 'YourCertificateName';
+GO
+-------
+RESTORE FILELISTONLY 
+FROM DISK = 'D:\Backups\YourDB_Full.bak';
+GO
+-------

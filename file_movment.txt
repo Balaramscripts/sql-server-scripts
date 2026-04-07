@@ -1,0 +1,19 @@
+
+select name as filelogicalname, physical_name as filelocation 
+from sys.master_files
+where database_id =DB_ID('AXIS_eKYC')
+
+use master
+alter database AXIS_eKYC  SET OFFLINE WITH ROLLBACK IMMEDIATE
+---copy msd file from D drive to F drive
+alter database AXIS_eKYC 
+modify file (
+	name =AXIS_eKYC,
+
+	filename='F:\Data\AXIS_eKYC.mdf'
+)
+
+--D:\Data\AXIS_eKYC.mdf------rollback path
+
+
+alter database AXIS_eKYC set online

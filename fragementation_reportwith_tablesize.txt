@@ -1,0 +1,57 @@
+SELECT 
+    t.name AS [Table],
+    i.name AS [Index],
+    DDIPS.avg_fragmentation_in_percent,
+    DDIPS.page_count,
+    (PS.used_page_count * 8.0) / 1024 AS TableSizeMB,
+    CASE 
+        WHEN DDIPS.avg_fragmentation_in_percent >= 30 THEN 
+            'ALTER INDEX [' + i.name + '] ON [' + s.name + '].[' + t.name + '] REBUILD;'
+        WHEN DDIPS.avg_fragmentation_in_percent >= 5 THEN 
+            'ALTER INDEX [' + i.name + '] ON [' + s.name + '].[' + t.name + '] REORGANIZE;'
+        ELSE 
+            '-- No action needed'
+    END AS RebuildScript
+FROM sys.dm_db_index_physical_stats(DB_ID(), NULL, NULL, NULL, 'SAMPLED') AS DDIPS
+INNER JOIN sys.indexes AS i 
+    ON DDIPS.object_id = i.object_id AND DDIPS.index_id = i.index_id
+INNER JOIN sys.tables AS t 
+    ON DDIPS.object_id = t.object_id
+INNER JOIN sys.schemas AS s
+    ON t.schema_id = s.schema_id
+INNER JOIN sys.dm_db_partition_stats AS PS 
+    ON PS.object_id = t.object_id AND PS.index_id = i.index_id
+WHERE DDIPS.database_id = DB_ID()
+  AND i.name IS NOT NULL
+  AND DDIPS.page_count > 100
+ORDER BY DDIPS.avg_fragmentation_in_percent DESC, TableSizeMB DESC;
+--------------------------------------------------------------------------------
+--Script with 1 GB filter for small Tables only 
+SELECT 
+    t.name AS [Table],
+    i.name AS [Index],
+    DDIPS.avg_fragmentation_in_percent,
+    DDIPS.page_count,
+    (PS.used_page_count * 8.0) / 1024 AS TableSizeMB,
+    CASE 
+        WHEN DDIPS.avg_fragmentation_in_percent >= 30 THEN 
+            'ALTER INDEX [' + i.name + '] ON [' + s.name + '].[' + t.name + '] REBUILD;'
+        WHEN DDIPS.avg_fragmentation_in_percent >= 5 THEN 
+            'ALTER INDEX [' + i.name + '] ON [' + s.name + '].[' + t.name + '] REORGANIZE;'
+        ELSE 
+            '-- No action needed'
+    END AS RebuildScript
+FROM sys.dm_db_index_physical_stats(DB_ID(), NULL, NULL, NULL, 'SAMPLED') AS DDIPS
+INNER JOIN sys.indexes AS i 
+    ON DDIPS.object_id = i.object_id AND DDIPS.index_id = i.index_id
+INNER JOIN sys.tables AS t 
+    ON DDIPS.object_id = t.object_id
+INNER JOIN sys.schemas AS s
+    ON t.schema_id = s.schema_id
+INNER JOIN sys.dm_db_partition_stats AS PS 
+    ON PS.object_id = t.object_id AND PS.index_id = i.index_id
+WHERE DDIPS.database_id = DB_ID()
+  AND i.name IS NOT NULL
+  AND DDIPS.page_count > 100
+  AND (PS.used_page_count * 8.0) / 1024 < 1024 -- Filter: Less than 1 GB
+ORDER BY DDIPS.avg_fragmentation_in_percent DESC, TableSizeMB DESC;

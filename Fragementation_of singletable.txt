@@ -1,0 +1,60 @@
+USE YourDatabaseName;
+GO
+
+SELECT 
+    OBJECT_NAME(ips.object_id) AS TableName,
+    i.name AS IndexName,
+    ips.index_id,
+    ips.avg_fragmentation_in_percent,
+    ips.page_count
+FROM sys.dm_db_index_physical_stats(
+        DB_ID('YourDatabaseName'), -- Database ID
+        OBJECT_ID('dbo.YourTableName'), -- Table ID
+        NULL, -- Index ID (NULL for all)
+        NULL, -- Partition ID
+        'LIMITED' -- Mode: LIMITED / SAMPLED / DETAILED
+    ) AS ips
+JOIN sys.indexes AS i
+    ON ips.object_id = i.object_id
+    AND ips.index_id = i.index_id
+ORDER BY ips.avg_fragmentation_in_percent DESC;
+
+------------------------------------------------------------------------
+With Query
+
+USE YourDatabaseName;
+GO
+
+-- Check fragmentation and generate maintenance commands
+SELECT 
+    OBJECT_NAME(ips.object_id) AS TableName,
+    i.name AS IndexName,
+    ips.index_id,
+    ips.avg_fragmentation_in_percent,
+    ips.page_count,
+    -- Generate maintenance commands based on fragmentation level
+    MaintenanceCommand = 
+        CASE 
+            WHEN ips.avg_fragmentation_in_percent > 30 THEN 
+                'ALTER INDEX [' + i.name + '] ON [' + OBJECT_SCHEMA_NAME(ips.object_id) + '].[' + OBJECT_NAME(ips.object_id) + '] REBUILD;'
+            WHEN ips.avg_fragmentation_in_percent BETWEEN 5 AND 30 THEN 
+                'ALTER INDEX [' + i.name + '] ON [' + OBJECT_SCHEMA_NAME(ips.object_id) + '].[' + OBJECT_NAME(ips.object_id) + '] REORGANIZE;'
+            ELSE 
+                '-- Index [' + i.name + '] is in good state (fragmentation: ' + CAST(ips.avg_fragmentation_in_percent AS VARCHAR(10)) + '%)'
+        END,
+    -- Generate UPDATE STATISTICS command
+    UpdateStatsCommand = 'UPDATE STATISTICS [' + OBJECT_SCHEMA_NAME(ips.object_id) + '].[' + OBJECT_NAME(ips.object_id) + '] [' + i.name + '];'
+
+FROM sys.dm_db_index_physical_stats(
+    DB_ID('YourDatabaseName'), -- Database ID
+    OBJECT_ID('dbo.YourTableName'), -- Table ID
+    NULL, -- Index ID (NULL for all)
+    NULL, -- Partition ID
+    'LIMITED' -- Mode: LIMITED / SAMPLED / DETAILED
+) AS ips
+
+JOIN sys.indexes AS i
+    ON ips.object_id = i.object_id
+    AND ips.index_id = i.index_id
+
+ORDER BY ips.avg_fragmentation_in_percent DESC;

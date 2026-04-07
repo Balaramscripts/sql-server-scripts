@@ -1,0 +1,10 @@
+Declare @replication_isInstalled int;
+
+EXEC @replication_isInstalled = master.sys.sp_MS_replication_installed;
+
+Select @replication_isInstalled as IS_Replication_Installed;
+
+=====================================================================================
+
+
+Select * from sys.databases a where a.is_published =1 or a.is_distributor=1 or is_subscribed=1

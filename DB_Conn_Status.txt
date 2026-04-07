@@ -1,0 +1,89 @@
+SELECT GETDATE() AS "Today's Date", COUNT(eC.connection_id) AS total_database_connections
+FROM sys.dm_exec_connections eC 
+CROSS APPLY sys.dm_exec_sql_text (eC.most_recent_sql_handle) ST
+LEFT JOIN sys.dm_exec_sessions eS 
+ON eC.most_recent_session_id = eS.session_id
+GO
+
+SELECT ConnectionStatus = CASE WHEN dec.most_recent_sql_handle = 0x0 
+        THEN 'Unused' 
+        ELSE 'Used' 
+        END
+    , CASE WHEN des.status = 'Sleeping' 
+        THEN 'sleeping' 
+        ELSE 'Not Sleeping' 
+        END
+    , ConnectionCount = COUNT(1)
+FROM sys.dm_exec_connections dec
+    INNER JOIN sys.dm_exec_sessions des ON dec.session_id = des.session_id
+GROUP BY CASE WHEN des.status = 'Sleeping' 
+        THEN 'sleeping' 
+        ELSE 'Not Sleeping' 
+        END
+    , CASE WHEN dec.most_recent_sql_handle = 0x0 
+        THEN 'Unused' 
+        ELSE 'Used' 
+        END;
+
+
+
+-- START: User wise / Port wise DB connections --
+
+SELECT GETDATE() AS "Today's Date", COUNT(eC.connection_id) AS total_database_connections
+FROM sys.dm_exec_connections eC 
+CROSS APPLY sys.dm_exec_sql_text (eC.most_recent_sql_handle) ST
+LEFT JOIN sys.dm_exec_sessions eS 
+ON eC.most_recent_session_id = eS.session_id
+GO
+
+SELECT GETDATE() AS TodaysDate, DEC.local_tcp_port, COUNT(DEC.session_id) AS connection_count
+FROM sys.dm_exec_sessions AS des
+INNER JOIN sys.dm_exec_connections AS DEC ON des.session_id = DEC.session_id
+GROUP BY DEC.local_tcp_port
+ORDER BY DEC.local_tcp_port DESC
+GO
+
+
+SELECT GETDATE() AS TodaysDate, des.login_name as LoginName, DEC.local_tcp_port, COUNT(DEC.session_id) AS connection_count
+FROM sys.dm_exec_sessions AS des
+INNER JOIN sys.dm_exec_connections AS DEC ON des.session_id = DEC.session_id
+WHERE nt_domain IS NULL and des.login_name NOT IN ('a_repl_prd', 'dpa', 'a_healapp_prd')
+GROUP BY des.login_name, DEC.local_tcp_port
+ORDER BY DEC.local_tcp_port DESC
+GO
+
+-- END: User wise / Port wise DB connections --
+
+
+
+-- Active App and Login and Port wise DB Active and Sleeping Connection --
+SELECT s.program_name, s.login_name, c.client_net_address, c.local_tcp_port, COUNT(*) AS session_count, 
+SUM(CASE WHEN s.status = 'running' THEN 1 ELSE 0 END) AS running_sessions,
+SUM(CASE WHEN s.status = 'sleeping' THEN 1 ELSE 0 END) AS sleeping_sessions
+FROM sys.dm_exec_sessions s
+JOIN sys.dm_exec_connections c ON s.session_id = c.session_id
+WHERE s.is_user_process = 1 and s.status = 'running' and s.login_name NOT IN ('a_repl_prd', 'dpa') and s.login_name NOT LIKE '%\%' --and c.client_net_address in ('10.71.87.14')
+GROUP BY s.program_name, s.login_name, c.client_net_address, c.local_tcp_port
+ORDER BY session_count DESC;
+
+
+-- Application DB connections with status --
+SELECT GETDATE() AS TodaysDate, DEC.client_net_address, DEC.local_tcp_port, des.status, des.program_name, des.client_version, des.client_interface_name, des.host_name, db_name(des.database_id) as [database_name], des.login_time, des.login_name, COUNT(DEC.session_id) AS connection_count
+FROM sys.dm_exec_sessions AS des
+INNER JOIN sys.dm_exec_connections AS DEC ON des.session_id = DEC.session_id
+--WHERE des.nt_domain = 'FINOBANK' and des.login_time < cast(getdate() as date)
+--WHERE des.program_name = '.Net SqlClient Data Provider'
+--WHERE DEC.client_net_address LIKE '10.71.89%'
+--WHERE db_name(des.database_id) = 'Gyankosh2'
+GROUP BY DEC.client_net_address
+	,DEC.local_tcp_port
+	,des.status
+	,des.program_name
+	,des.client_version
+	,des.client_interface_name
+	,des.host_name
+	,db_name(des.database_id)
+	,des.login_name
+	,des.login_time 
+ORDER BY des.login_time DESC
+GO

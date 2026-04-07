@@ -1,0 +1,13 @@
+SELECT GETDATE() AS TodaysDate, DEC.client_net_address, des.host_name, DEC.local_tcp_port, COUNT(DEC.session_id) AS connection_count
+
+FROM sys.dm_exec_sessions AS des
+
+INNER JOIN sys.dm_exec_connections AS DEC ON des.session_id = DEC.session_id
+
+GROUP BY DEC.client_net_address, des.host_name, DEC.local_tcp_port
+
+ORDER BY COUNT(DEC.session_id) DESC
+
+GO
+
+ 

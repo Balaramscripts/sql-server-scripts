@@ -1,0 +1,29 @@
+DECLARE @srvName VARCHAR(255)
+DECLARE @sql VARCHAR(400)
+DECLARE @output TABLE (line VARCHAR(255))
+
+-- Default server name, can be set to another server name
+SET @srvName = @@SERVERNAME 
+IF CHARINDEX ('\', @srvName) > 0
+    SET @srvName = SUBSTRING(@srvName, 1, CHARINDEX('\',@srvName)-1)
+
+SET @sql = 'powershell.exe -c "Get-WmiObject -ComputerName ' + QUOTENAME(@srvName,'''') + ' -Class Win32_Volume -Filter ''DriveType = 3'' | SELECT name,capacity,freespace | foreach{$_.name+''|''+$_.capacity/1048576/1024+''%''+$_.freespace/1048576/1024+''*''}"'
+
+-- Inserting disk name, total space, and free space value into temporary table
+INSERT @output
+EXEC xp_cmdshell @sql
+
+-- Retrieve the values in GB from PowerShell Script output
+SELECT @@servername as Hostname, RTRIM(LTRIM(SUBSTRING(line,1,CHARINDEX('|',line) -1))) AS drivename
+      ,ROUND(CAST(RTRIM(LTRIM(SUBSTRING(line,CHARINDEX('|',line)+1,
+      (CHARINDEX('%',line) -1)-CHARINDEX('|',line)) )) AS FLOAT),0) AS 'capacity(GB)'
+      ,ROUND(CAST(RTRIM(LTRIM(SUBSTRING(line,CHARINDEX('%',line)+1,
+      (CHARINDEX('*',line) -1)-CHARINDEX('%',line)) )) AS FLOAT),0) AS 'freespace(GB)'
+      ,CAST (((ROUND(CAST(RTRIM(LTRIM(SUBSTRING(line,CHARINDEX('%',line)+1,
+      (CHARINDEX('*',line) -1)-CHARINDEX('%',line)) )) AS FLOAT),0)))*100/
+      (ROUND(CAST(RTRIM(LTRIM(SUBSTRING(line,CHARINDEX('|',line)+1,
+      (CHARINDEX('%',line) -1)-CHARINDEX('|',line)) )) AS FLOAT),0)) AS INT) AS 'freespace %'
+FROM @output
+WHERE line LIKE '[A-Z][:]%'
+ORDER BY drivename
+     

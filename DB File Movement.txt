@@ -1,0 +1,23 @@
+select name as filelogicalname, physical_name as filelocation 
+from sys.master_files
+where database_id =DB_ID('PBLOGS')
+
+use master
+alter database PBLOGS  SET OFFLINE WITH ROLLBACK IMMEDIATE
+
+alter database PBLOGS 
+modify file (
+	name =PBLOGS_TBL_CORELATION_LOG_2,
+	--file move k drive to f drive
+	filename='F:\PBLOG_Data\PBLOGS_TBL_CORELATION_LOG_2.ndf'
+)
+
+alter database PBLOGS  set online
+
+
+
+
+
+
+
+

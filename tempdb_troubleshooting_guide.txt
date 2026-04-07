@@ -1,0 +1,105 @@
+
+SQL Server tempdb Full After Restart - Troubleshooting Guide
+------------------------------------------------------------
+
+1. Check for Active Queries Using tempdb
+----------------------------------------
+Run this query to identify current sessions using tempdb heavily:
+
+```sql
+SELECT 
+    s.session_id,
+    r.status,
+    r.command,
+    r.wait_type,
+    r.blocking_session_id,
+    t.text AS [SQL Text],
+    (r.allocated_bytes / 1024.0 / 1024) AS Allocated_MB
+FROM sys.dm_exec_requests r
+JOIN sys.dm_exec_sessions s ON r.session_id = s.session_id
+CROSS APPLY sys.dm_exec_sql_text(r.sql_handle) t
+WHERE r.database_id = 2
+ORDER BY Allocated_MB DESC;
+```
+
+2. Check Version Store Usage
+----------------------------
+Check if versioning is using space (Snapshot Isolation, triggers):
+
+```sql
+SELECT SUM(version_store_reserved_page_count) * 8.0 / 1024 AS VersionStore_MB
+FROM sys.dm_db_file_space_usage;
+```
+
+3. Check Temp Tables / Table Variables Usage
+--------------------------------------------
+Determine if user or internal objects are consuming tempdb:
+
+```sql
+SELECT 
+    SUM(user_object_reserved_page_count)*8/1024 AS UserObjects_MB,
+    SUM(internal_object_reserved_page_count)*8/1024 AS InternalObjects_MB
+FROM sys.dm_db_file_space_usage;
+```
+
+4. Check Large Query Memory Usage
+---------------------------------
+Find sessions with heavy tempdb memory use:
+
+```sql
+SELECT 
+    session_id, 
+    request_id,
+    internal_objects_alloc_page_count * 8 / 1024 AS Internal_MB,
+    user_objects_alloc_page_count * 8 / 1024 AS User_MB
+FROM sys.dm_db_session_space_usage
+ORDER BY Internal_MB DESC;
+```
+
+5. File Configuration & Autogrowth Settings
+-------------------------------------------
+Check and tune tempdb file settings:
+
+```sql
+USE tempdb;
+GO
+EXEC sp_helpfile;
+```
+
+Increase size at startup:
+
+```sql
+ALTER DATABASE tempdb 
+MODIFY FILE (NAME = tempdev, SIZE = 1GB);
+```
+
+6. Recompile or Flush Query Plan Cache (Use with Caution)
+----------------------------------------------------------
+```sql
+-- Clear entire procedure cache
+DBCC FREEPROCCACHE;
+
+-- Recompile a specific stored procedure
+EXEC sp_recompile 'YourProcedureName';
+```
+
+7. Temporary Shrinking of tempdb (Avoid Frequent Use)
+------------------------------------------------------
+```sql
+USE tempdb;
+GO
+DBCC SHRINKFILE (tempdev, 500);  -- Shrink to 500 MB or suitable size
+```
+
+8. Summary Table
+----------------
+
+| Problem Cause             | Recommended Fix                                      |
+|--------------------------|------------------------------------------------------|
+| Heavy query usage        | Tune queries, optimize joins/sorts                  |
+| Version store            | Disable RCSI if not needed, close long transactions |
+| Misconfigured files      | Resize and equalize files, set proper autogrowth    |
+| Excess temp tables       | Use fewer temp tables, optimize procs               |
+| Query plan bloat         | Recompile procs, clear cache selectively            |
+
+Use Query Store or Extended Events to analyze tempdb usage over time.
